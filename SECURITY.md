@@ -24,6 +24,9 @@ boundaries:
 - executing artifact content or a MIME-selected helper;
 - leaking local paths, environment values, or file contents into receipts.
 
+The v1 artifact profile rejects encoded inputs larger than 32 MiB before registry hashing or
+preview decoding. Raster dimensions and decoded allocation have independent bounds.
+
 ## Design boundary
 
 Protocol parsers accept untrusted bytes and produce typed observations only.

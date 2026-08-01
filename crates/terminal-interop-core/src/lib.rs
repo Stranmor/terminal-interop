@@ -1,5 +1,11 @@
 //! Protocol-neutral contracts for terminal interoperability evidence.
 
+/// Maximum encoded artifact size accepted by the version-one preview profile: 32 MiB.
+///
+/// Registration and consumption share this bound so a short reference cannot authorize work
+/// that the eventual preview consumer must reject after hashing an unbounded file.
+pub const MAX_ARTIFACT_INPUT_BYTES_V1: usize = 32 * 1024 * 1024;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -37,6 +43,16 @@ pub struct AdapterIdentity {
     pub name: String,
     /// Adapter implementation version.
     pub version: String,
+}
+
+/// Protocol-scoped correlation identity for one request-response relation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CorrelationId {
+    /// Stable namespace defining how the value is interpreted.
+    pub namespace: String,
+    /// Exact protocol value retained without imposing a numeric representation.
+    pub value: String,
 }
 
 /// How an environment hint was retained without promoting it to capability evidence.
@@ -144,8 +160,8 @@ pub struct WireEvent {
     pub role: WireEventRole,
     /// Protocol family that parsed this event, if any.
     pub protocol: Option<ProtocolId>,
-    /// Correlation identifier recovered from the protocol response.
-    pub correlation_id: Option<u32>,
+    /// Correlation value recovered from the protocol response.
+    pub correlation: Option<String>,
     /// Protocol-defined status token such as `OK`.
     pub status: Option<String>,
     /// Structured protocol fields retained without changing the core schema.
@@ -264,8 +280,8 @@ pub struct ProbeReceiptV1 {
     pub capability: CapabilityId,
     /// Adapter implementation that emitted and parsed the exchange.
     pub adapter: AdapterIdentity,
-    /// Positive protocol-level correlation identifier.
-    pub correlation_id: u32,
+    /// Protocol-level correlation identity when this profile defines one.
+    pub correlation: Option<CorrelationId>,
     /// Execution context with unknowns preserved.
     pub context: ProbeContext,
     /// Exact transport evidence.

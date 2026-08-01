@@ -1,58 +1,126 @@
 # Terminal Interop
 
-Executable, protocol-neutral evidence for terminal capability negotiation.
+Terminal-native previews for agent artifacts, built from small versioned contracts instead of
+terminal-name heuristics.
 
-The first adapter probes the Kitty Graphics Protocol (KGP) through the real
-TTY chain. The receipt keeps wire evidence separate from interpretation, so a
-terminal, multiplexer, SSH transport, test runner, or application can consume
-the same result without inheriting product-specific assumptions.
+An agent can offer one completed file as an opaque short reference. A human or another tool can
+then preview that exact file in the current terminal: sanitized text in a pager, or real pixels
+through the best capability observed on the live TTY chain.
 
-## Contract
+```console
+$ term-interop offer ./artifacts/design.png
+@6W4D9F2K8M7QH
 
-`terminal-interop-core` owns the versioned JSON receipt and assessment model.
-Protocol crates only own encoding and parsing. Transport crates only transform
-protocol bytes for one path. The CLI owns live TTY I/O.
+$ term-interop preview @6W4D9F2K8M7QH
+# q or Esc returns to the caller; Enter remains untouched
+```
+
+The convenience command installed alongside the CLI is shorter:
+
+```console
+$ zv @6W4D9F2K8M7QH
+```
+
+## What is different
+
+- **No copied path.** `@TOKEN` and `terminal-interop://artifact/TOKEN` preserve exact path bytes in
+  a private local registry, so line wrapping cannot corrupt the reference.
+- **No character-art image fallback disguised as success.** Raster previews use Kitty Graphics
+  Protocol (KGP) or Sixel. If neither live protocol probe succeeds, the CLI fails explicitly.
+- **No separate window in the core.** The preview owns the current TTY temporarily, uses the
+  alternate screen, and restores its caller after `q` or `Esc`.
+- **No `$TERM` capability guesses.** Environment values are bounded hints. Availability and
+  protocol conformance come from live wire evidence.
+- **No vendor-shaped core.** Artifact validation, references, probes, geometry, transports, KGP,
+  Sixel, and the interactive consumer are replaceable crates with narrow contracts.
+
+## Install
+
+Rust 1.90 or newer is required.
+
+```bash
+./install.sh
+```
+
+The installer builds with `--locked`, creates an immutable content-addressed release below
+`$PREFIX/libexec/terminal-interop`, and atomically activates `term-interop` and `zv` in
+`$PREFIX/bin`. `PREFIX` defaults to `$HOME/.local`.
+
+To build without installing:
+
+```bash
+cargo build --release --locked -p terminal-interop-cli
+```
+
+## Commands
 
 ```text
-consumer
-   -> terminal-interop-core receipt
-      -> protocol adapter (KGP first)
-         -> transport adapter (direct TTY or tmux passthrough)
-            -> live TTY chain
+term-interop offer PATH [--format short|uri|json]
+term-interop preview PATH_OR_REFERENCE [--backend auto|kgp|sixel]
+term-interop probe kgp [--transport direct|tmux-passthrough] [--pretty]
+term-interop probe sixel [--transport direct|tmux-passthrough] [--pretty]
+term-interop schema receipt --pretty
 ```
 
-The system does not infer topology or support from `$TERM`. Environment values
-are recorded only as bounded hints; support claims require wire evidence.
+Text navigation: `Space`/`j` next page, `k` previous page, `g` first page, `G` last page,
+`q`/`Esc` close. Raster previews use `q`/`Esc`; other keys, including Enter, do nothing.
 
-## Build and test
+`--transport auto` enables tmux DCS passthrough only when a tmux environment marker is present.
+Direct TTY remains the default for terminals, Zellij, and SSH sessions.
+
+## Contracts
+
+```text
+agent or producer
+    -> artifact-ref-v1 (opaque identity-bound reference)
+        -> validated artifact (text or canonical RGBA/PNG)
+            -> live capability receipt
+                -> protocol renderer (KGP | Sixel)
+                    -> transport adapter (direct | tmux DCS)
+                        -> current TTY consumer
+```
+
+The schemas and semantics are documented independently:
+
+- [Artifact reference v1](docs/artifact-ref-v1.md)
+- [Probe receipt v1](docs/probe-receipt-v1.md)
+- [Preview profile v1](docs/preview-profile-v1.md)
+- [Compatibility evidence](docs/compatibility.md)
+- [Consumer integration](docs/integration.md)
+
+## Security model
+
+- Only an explicitly offered regular file can become a short reference.
+- Registration and preview share a 32 MiB encoded-input limit.
+- References bind canonical path bytes, device/inode where available, size, modification time, and
+  SHA-256; a changed file fails closed rather than silently rebinding.
+- Registry directories are private (`0700` on Unix), entries are atomically persisted, and paths
+  are data rather than shell source.
+- Raster decoding is bounded by dimensions and decoded allocation, then re-encoded as
+  metadata-free PNG or RGBA before rendering.
+- Text control bytes are sanitized; artifact content is never emitted as terminal control input.
+
+See [SECURITY.md](SECURITY.md) for the reporting and trust boundary.
+
+## Verification
 
 ```bash
-cargo test --all-targets
-cargo run -p terminal-interop-cli -- schema receipt
-cargo run -p terminal-interop-cli -- probe kgp --pretty
+cargo fmt --all -- --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --all-targets --locked
+shellcheck install.sh scripts/zv tests/*.sh tests/fixtures/*.sh
 ./tests/e2e-hidden-kitty.sh
+./tests/e2e-preview-kitty.sh
+./tests/e2e-preview-text.sh
 ```
 
-For non-interactive runs, write the receipt directly to a file:
+The framebuffer E2E suite launches isolated terminals, renders a high-frequency raster fixture,
+captures the live and restored screens, and records machine-readable evidence under `/var/tmp`.
+It never attaches to an existing user multiplexer session. Sixel/Alacritty evidence has additional
+prerequisites described in [Compatibility evidence](docs/compatibility.md).
 
-```bash
-term-interop probe kgp --output /tmp/kgp-receipt.json --pretty
-term-interop probe kgp --transport tmux-passthrough --pretty
-```
+## Status
 
-## Scope of the first vertical slice
-
-- versioned, machine-readable probe receipts;
-- exact protocol request, transformed wire request, and response bytes;
-- transport readiness evidence kept separate from capability evidence;
-- independent availability and conformance assessments;
-- explicit `unknown` when the barrier or protocol reply is absent;
-- KGP direct-RGB query plus primary-device-attributes barrier;
-- real PTY execution suitable for direct terminals and nested multiplexers.
-
-Rendering, image lifecycle, security limits, and placement conformance are
-separate profiles that can build on the same core contract.
-
-The E2E suite starts isolated hidden Kitty, tmux, and Zellij consumers. It
-retains a receipt for every path plus a compact summary under `/var/tmp`; it
-never attaches to an existing multiplexer session.
+This repository is pre-1.0. Version-one contracts are explicit and additive changes are preferred,
+but no ecosystem compatibility promise is implied until a tagged release exists. Unsupported or
+untested chains remain `unknown`; they are not converted into optimistic booleans.

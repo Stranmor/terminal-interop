@@ -7,6 +7,7 @@ use terminal_interop_core::{
     AdapterIdentity, AssertionOutcome, AssertionResult, Assessment, Availability, CapabilityId,
     Conformance, ProtocolId, WireEvent, WireEventRole,
 };
+use terminal_interop_da1::parse_response_at;
 
 const ESC: u8 = 0x1b;
 const ST: [u8; 2] = [ESC, b'\\'];
@@ -19,6 +20,40 @@ pub const ADAPTER_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub enum ProbeBuildError {
     /// KGP reserves image identifier zero.
     ZeroCorrelationId,
+}
+
+/// Error returned when a PNG display transmission cannot be constructed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DisplayBuildError {
+    /// Empty payload is not a valid PNG transmission.
+    EmptyPayload,
+    /// Placement dimensions must occupy at least one cell.
+    ZeroPlacement,
+    /// Image number zero is reserved by the protocol.
+    ZeroImageNumber,
+}
+
+impl std::fmt::Display for DisplayBuildError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyPayload => formatter.write_str("KGP PNG payload must not be empty"),
+            Self::ZeroPlacement => formatter.write_str("KGP placement dimensions must be non-zero"),
+            Self::ZeroImageNumber => formatter.write_str("KGP image number must be non-zero"),
+        }
+    }
+}
+
+impl std::error::Error for DisplayBuildError {}
+
+/// Cell placement and lifecycle identity for one PNG display transmission.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PngDisplayOptions {
+    /// Image number used to avoid collisions with unrelated image identifiers.
+    pub image_number: u32,
+    /// Placement width in terminal cells.
+    pub columns: u16,
+    /// Placement height in terminal cells.
+    pub rows: u16,
 }
 
 impl std::fmt::Display for ProbeBuildError {
@@ -91,6 +126,57 @@ pub fn build_query(correlation_id: u32) -> Result<Vec<u8>, ProbeBuildError> {
     Ok(request)
 }
 
+/// Encode PNG bytes as a chunked direct KGP transmit-and-display sequence.
+///
+/// The result uses an image number, transient usage hint, fixed cell placement,
+/// no cursor movement, and quiet mode. Chunks never exceed 4096 Base64 bytes.
+///
+/// # Errors
+///
+/// Returns [`DisplayBuildError`] for empty data or invalid placement identity.
+pub fn encode_png_display(
+    png: &[u8],
+    options: PngDisplayOptions,
+) -> Result<Vec<u8>, DisplayBuildError> {
+    if png.is_empty() {
+        return Err(DisplayBuildError::EmptyPayload);
+    }
+    if options.columns == 0 || options.rows == 0 {
+        return Err(DisplayBuildError::ZeroPlacement);
+    }
+    if options.image_number == 0 {
+        return Err(DisplayBuildError::ZeroImageNumber);
+    }
+
+    let encoded = BASE64_STANDARD.encode(png);
+    let chunks = encoded.as_bytes().chunks(4096).collect::<Vec<_>>();
+    let mut output =
+        Vec::with_capacity(encoded.len().saturating_add(chunks.len().saturating_mul(96)));
+    for (index, chunk) in chunks.iter().enumerate() {
+        let more = u8::from(index.saturating_add(1) < chunks.len());
+        if index == 0 {
+            output.extend_from_slice(
+                format!(
+                    "\x1b_Ga=T,f=100,I={},c={},r={},C=1,N=1,q=2,m={more};",
+                    options.image_number, options.columns, options.rows
+                )
+                .as_bytes(),
+            );
+        } else {
+            output.extend_from_slice(format!("\x1b_Gm={more},q=2;").as_bytes());
+        }
+        output.extend_from_slice(chunk);
+        output.extend_from_slice(b"\x1b\\");
+    }
+    Ok(output)
+}
+
+/// Build a hard-delete command for the newest image with one image number.
+#[must_use]
+pub fn delete_image_number(image_number: u32) -> Vec<u8> {
+    format!("\x1b_Ga=d,d=N,I={image_number},q=2\x1b\\").into_bytes()
+}
+
 fn find_st(input: &[u8], from: usize) -> Option<usize> {
     input
         .get(from..)?
@@ -134,7 +220,7 @@ fn parse_apc_event(input: &[u8], offset: usize, sequence: u32) -> Option<(Observ
         sequence,
         role: WireEventRole::CapabilityReply,
         protocol: Some(protocol_id()),
-        correlation_id,
+        correlation: correlation_id.map(|value| value.to_string()),
         status,
         fields,
         raw_base64: BASE64_STANDARD.encode(raw),
@@ -142,38 +228,11 @@ fn parse_apc_event(input: &[u8], offset: usize, sequence: u32) -> Option<(Observ
     Some((ObservedEvent { offset, event }, raw_end))
 }
 
-fn csi_final(input: &[u8], from: usize) -> Option<usize> {
-    input
-        .get(from..)?
-        .iter()
-        .position(|byte| (0x40..=0x7e).contains(byte))
-        .and_then(|index| from.checked_add(index))
-}
-
 fn parse_da1_event(input: &[u8], offset: usize, sequence: u32) -> Option<(ObservedEvent, usize)> {
-    let prefix_end = offset.checked_add(2)?;
-    if input.get(offset..prefix_end)? != [ESC, b'['] {
-        return None;
-    }
-    let end = csi_final(input, prefix_end)?;
-    if input.get(end) != Some(&b'c') {
-        return None;
-    }
-    let parameters = String::from_utf8_lossy(input.get(prefix_end..end)?).into_owned();
-    let mut fields = BTreeMap::new();
-    fields.insert("parameters".to_string(), parameters);
-    let raw_end = end.checked_add(1)?;
-    let raw = input.get(offset..raw_end)?;
-    let event = WireEvent {
-        sequence,
-        role: WireEventRole::BarrierReply,
-        protocol: None,
-        correlation_id: None,
-        status: None,
-        fields,
-        raw_base64: BASE64_STANDARD.encode(raw),
-    };
-    Some((ObservedEvent { offset, event }, raw_end))
+    let response = parse_response_at(input, offset)?;
+    let next = response.end_offset;
+    let event = response.wire_event(sequence, WireEventRole::BarrierReply);
+    Some((ObservedEvent { offset, event }, next))
 }
 
 fn assertion(id: &str, outcome: AssertionOutcome, detail: impl Into<String>) -> AssertionResult {
@@ -254,7 +313,7 @@ fn assess_unmatched_reply(
                 AssertionOutcome::Fail,
                 format!(
                     "received KGP reply for {:?}, expected {correlation_id}",
-                    unmatched.event.correlation_id
+                    unmatched.event.correlation
                 ),
             ),
             assertion(
@@ -305,12 +364,14 @@ fn assess_unknown() -> Assessment {
 }
 
 fn assess(events: &[ObservedEvent], correlation_id: u32) -> Assessment {
+    let expected_correlation = correlation_id.to_string();
     let kgp_events = events
         .iter()
         .filter(|observed| observed.event.role == WireEventRole::CapabilityReply)
         .collect::<Vec<_>>();
-    let matching =
-        kgp_events.iter().find(|observed| observed.event.correlation_id == Some(correlation_id));
+    let matching = kgp_events.iter().find(|observed| {
+        observed.event.correlation.as_deref() == Some(expected_correlation.as_str())
+    });
     let barrier = events.iter().find(|observed| observed.event.role == WireEventRole::BarrierReply);
 
     if let Some(reply) = matching {
@@ -348,9 +409,10 @@ pub fn parse_exchange(input: &[u8], correlation_id: u32) -> ParsedExchange {
         offset = offset.saturating_add(1);
     }
 
+    let expected_correlation = correlation_id.to_string();
     let correlated_reply_seen = observed.iter().any(|event| {
         event.event.role == WireEventRole::CapabilityReply
-            && event.event.correlation_id == Some(correlation_id)
+            && event.event.correlation.as_deref() == Some(expected_correlation.as_str())
     });
     let barrier_seen = observed.iter().any(|event| event.event.role == WireEventRole::BarrierReply);
     let assessment = assess(&observed, correlation_id);
@@ -403,5 +465,31 @@ mod tests {
         let parsed = parse_exchange(b"\x1b[?1;2c\x1b_Gi=31;OK\x1b\\", 31);
         assert_eq!(parsed.assessment.availability, Availability::Available);
         assert_eq!(parsed.assessment.conformance, Conformance::Nonconformant);
+    }
+
+    #[test]
+    fn png_display_uses_cell_placement_and_quiet_chunking() {
+        let png = vec![0xabu8; 4_000];
+        let encoded =
+            encode_png_display(&png, PngDisplayOptions { image_number: 17, columns: 80, rows: 24 })
+                .expect("valid display request");
+        let rendered = String::from_utf8(encoded).expect("KGP framing is ASCII");
+        assert!(rendered.starts_with("\u{1b}_Ga=T,f=100,I=17,c=80,r=24,C=1,N=1,q=2,m=1;"));
+        assert!(rendered.contains("\u{1b}\\\u{1b}_Gm=0,q=2;"));
+        assert!(rendered.ends_with("\u{1b}\\"));
+    }
+
+    #[test]
+    fn png_display_rejects_invalid_identity_and_geometry() {
+        let valid = PngDisplayOptions { image_number: 1, columns: 1, rows: 1 };
+        assert_eq!(encode_png_display(&[], valid), Err(DisplayBuildError::EmptyPayload));
+        assert_eq!(
+            encode_png_display(b"png", PngDisplayOptions { image_number: 0, columns: 1, rows: 1 }),
+            Err(DisplayBuildError::ZeroImageNumber)
+        );
+        assert_eq!(
+            encode_png_display(b"png", PngDisplayOptions { image_number: 1, columns: 0, rows: 1 }),
+            Err(DisplayBuildError::ZeroPlacement)
+        );
     }
 }

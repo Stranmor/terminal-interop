@@ -18,8 +18,14 @@ schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+terminal_size.workspace = true
+terminal-interop-artifact = { path = "../terminal-interop-artifact" }
 terminal-interop-core = { path = "../terminal-interop-core" }
+terminal-interop-da1 = { path = "../terminal-interop-da1" }
+terminal-interop-geometry = { path = "../terminal-interop-geometry" }
 terminal-interop-kgp = { path = "../terminal-interop-kgp" }
+terminal-interop-ref = { path = "../terminal-interop-ref" }
+terminal-interop-sixel = { path = "../terminal-interop-sixel" }
 terminal-interop-tmux = { path = "../terminal-interop-tmux" }
 thiserror.workspace = true
 

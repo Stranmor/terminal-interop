@@ -1,5 +1,5 @@
 [package]
-name = "terminal-interop-kgp"
+name = "terminal-interop-geometry"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,8 +8,6 @@ publish = false
 
 [dependencies]
 base64.workspace = true
-terminal-interop-core = { path = "../terminal-interop-core" }
-terminal-interop-da1 = { path = "../terminal-interop-da1" }
 
 [lints]
 workspace = true

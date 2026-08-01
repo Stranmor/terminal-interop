@@ -14,7 +14,13 @@ for required_command in cargo jq kitty timeout tmux zellij; do
     fi
 done
 
-cargo build --manifest-path "$project_dir/Cargo.toml" --release -p terminal-interop-cli
+if [[ -z "${TERM_INTEROP_BIN:-}" ]]; then
+    cargo build \
+        --manifest-path "$project_dir/Cargo.toml" \
+        --release \
+        --locked \
+        -p terminal-interop-cli
+fi
 
 artifact_parent=${TERM_INTEROP_E2E_DIR:-/var/tmp}
 mkdir -p "$artifact_parent"

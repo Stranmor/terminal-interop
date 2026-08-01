@@ -1,5 +1,5 @@
 [package]
-name = "terminal-interop-kgp"
+name = "terminal-interop-sixel"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-base64.workspace = true
+icy_sixel.workspace = true
 terminal-interop-core = { path = "../terminal-interop-core" }
 terminal-interop-da1 = { path = "../terminal-interop-da1" }
 

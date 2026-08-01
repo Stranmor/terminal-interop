@@ -11,5 +11,11 @@ and the project intends to use [Semantic Versioning](https://semver.org/).
 
 - Versioned terminal capability probe receipt and JSON Schema.
 - Kitty Graphics Protocol direct-RGB query adapter.
+- Sixel capability and pure-Rust raster encoding adapter.
 - tmux DCS passthrough transport adapter with evidence-based readiness.
-- Isolated real-terminal E2E coverage for Kitty, tmux, and Zellij.
+- Bounded text/raster artifact validation and geometry-aware placement.
+- Identity-bound short artifact references and typed local URIs.
+- Same-TTY interactive preview with explicit close and screen restoration.
+- Isolated real-terminal and framebuffer E2E coverage for Kitty, tmux, Zellij, and an exact
+  Alacritty graphics candidate.
+- Content-addressed local installer and `zv` convenience command.
