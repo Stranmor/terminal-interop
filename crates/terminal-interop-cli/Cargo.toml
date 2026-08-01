@@ -1,0 +1,27 @@
+[package]
+name = "terminal-interop-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "term-interop"
+path = "src/main.rs"
+
+[dependencies]
+base64.workspace = true
+clap.workspace = true
+nix.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+terminal-interop-core = { path = "../terminal-interop-core" }
+terminal-interop-kgp = { path = "../terminal-interop-kgp" }
+terminal-interop-tmux = { path = "../terminal-interop-tmux" }
+thiserror.workspace = true
+
+[lints]
+workspace = true

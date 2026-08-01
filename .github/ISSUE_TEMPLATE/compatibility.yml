@@ -1,0 +1,35 @@
+name: Compatibility result
+description: Submit evidence for a terminal or transport implementation
+title: "compat: "
+labels: [compatibility]
+body:
+  - type: input
+    id: implementation
+    attributes:
+      label: Implementation and exact version
+    validations:
+      required: true
+  - type: textarea
+    id: chain
+    attributes:
+      label: Complete consumed chain
+      placeholder: CLI -> multiplexer -> SSH -> terminal
+    validations:
+      required: true
+  - type: dropdown
+    id: availability
+    attributes:
+      label: Observed availability
+      options:
+        - available
+        - unavailable
+        - unknown
+    validations:
+      required: true
+  - type: textarea
+    id: receipt
+    attributes:
+      label: Redacted probe receipt
+      description: Preserve exact wire bytes; remove private environment values and paths.
+    validations:
+      required: true

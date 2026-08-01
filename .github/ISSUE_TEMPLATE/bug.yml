@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a reproducible implementation defect
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include secrets, private paths, or unredacted terminal logs.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected and observed outcome
+      description: Describe the practical difference, not only an internal error.
+    validations:
+      required: true
+  - type: textarea
+    id: chain
+    attributes:
+      label: Terminal chain
+      description: List terminal, transport, multiplexer, and SSH layers with versions.
+      placeholder: application -> tmux 3.x -> SSH -> terminal
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+    validations:
+      required: true
+  - type: textarea
+    id: receipt
+    attributes:
+      label: Redacted receipt or evidence
+      description: Remove local paths and environment values before attaching evidence.

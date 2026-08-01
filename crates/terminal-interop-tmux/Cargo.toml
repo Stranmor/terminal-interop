@@ -1,0 +1,13 @@
+[package]
+name = "terminal-interop-tmux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+terminal-interop-core = { path = "../terminal-interop-core" }
+
+[lints]
+workspace = true

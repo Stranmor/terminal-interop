@@ -1,0 +1,9 @@
+/target/
+*.swp
+*.swo
+.DS_Store
+/.idea/
+/.vscode/
+
+# Local E2E evidence belongs outside the repository by default.
+/e2e-artifacts/
