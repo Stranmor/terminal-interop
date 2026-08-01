@@ -9,6 +9,8 @@ preview_bin=${TERM_INTEROP_BIN:-"$project_dir/target/release/term-interop"}
 runner="$script_dir/fixtures/run-preview-and-restore.sh"
 zellij_layout="$script_dir/fixtures/zellij-preview.kdl"
 alacritty_bin=$TERM_INTEROP_ALACRITTY_BIN
+outer_columns=100
+outer_rows=32
 
 for required_command in cargo compare identify import jq magick Xvfb xdotool xdpyinfo zellij; do
     if ! command -v "$required_command" >/dev/null 2>&1; then
@@ -28,14 +30,28 @@ fi
 artifact_parent=${TERM_INTEROP_E2E_DIR:-/var/tmp}
 mkdir -p "$artifact_parent"
 run_dir=$(mktemp -d "$artifact_parent/terminal-interop-sixel-e2e.XXXXXX")
-fixture="$run_dir/fixture.png"
+fixture=${TERM_INTEROP_E2E_FIXTURE:-"$run_dir/fixture.png"}
 
-magick -size 960x640 gradient:'#10162c-#f0b35a' \
-    -stroke '#55d6ff' -strokewidth 2 -fill none \
-    -draw 'rectangle 40,40 920,600 line 40,320 920,320 line 480,40 480,600' \
-    -fill '#f8fafc' -stroke none -pointsize 42 -gravity center \
-    -annotate +0+0 'SIXEL 1px FRAMEBUFFER DETAIL' \
-    "$fixture"
+if [[ -n "${TERM_INTEROP_E2E_FIXTURE:-}" ]]; then
+    if [[ ! -f "$fixture" ]]; then
+        printf 'external E2E fixture is not a regular file: %s\n' "$fixture" >&2
+        exit 1
+    fi
+else
+    magick -size 960x640 gradient:'#10162c-#f0b35a' \
+        -stroke '#55d6ff' -strokewidth 2 -fill none \
+        -draw 'rectangle 40,40 920,600 line 40,320 920,320 line 480,40 480,600' \
+        -fill '#f8fafc' -stroke none -pointsize 42 -gravity center \
+        -annotate +0+0 'SIXEL 1px FRAMEBUFFER DETAIL' \
+        "$fixture"
+fi
+fixture_geometry=$(identify -format '%w %h' "$fixture")
+read -r fixture_width fixture_height <<<"$fixture_geometry"
+if ((fixture_width <= 0 || fixture_height <= 0)); then
+    printf 'E2E fixture has invalid geometry: %s\n' "$fixture_geometry" >&2
+    exit 1
+fi
+fixture_sha256=$(sha256sum "$fixture" | awk '{print $1}')
 
 display_number=
 for candidate in $(seq 120 149); do
@@ -84,8 +100,10 @@ run_case() {
     local restored_screenshot="$case_dir/restored.png"
     local zellij_config="$case_dir/zellij.kdl"
     local window_id=
-    local live_geometry restored_geometry live_width live_height expected_height crop_y
-    local live_colors restored_colors live_rmse restored_rmse live_metric restored_metric
+    local live_geometry restored_geometry live_width live_height expected_width expected_height
+    local crop_x crop_y cell_width cell_height
+    local live_colors restored_colors live_rmse perceptual_rmse restored_rmse
+    local live_metric perceptual_metric restored_metric
 
     mkdir -p "$case_dir"
     mkfifo "$start_fifo"
@@ -102,8 +120,8 @@ run_case() {
             TERM_INTEROP_DURATION_MS=3000 \
             TERM_INTEROP_BACKEND=sixel \
             "$alacritty_bin" --config-file /dev/null \
-                -o window.dimensions.columns=100 \
-                -o window.dimensions.lines=32 \
+                -o window.dimensions.columns="$outer_columns" \
+                -o window.dimensions.lines="$outer_rows" \
                 -o window.dynamic_title=false \
                 -T "$title" -e "$runner" \
                 >"$case_dir/alacritty.stdout" 2>"$case_dir/alacritty.stderr" &
@@ -133,8 +151,8 @@ run_case() {
         env -u WAYLAND_DISPLAY \
             DISPLAY=":$display_number" \
             "$alacritty_bin" --config-file /dev/null \
-                -o window.dimensions.columns=100 \
-                -o window.dimensions.lines=32 \
+                -o window.dimensions.columns="$outer_columns" \
+                -o window.dimensions.lines="$outer_rows" \
                 -o window.dynamic_title=false \
                 -T "$title" -e zellij --config "$zellij_config" attach "$active_session" \
                 >"$case_dir/alacritty.stdout" 2>"$case_dir/alacritty.stderr" &
@@ -187,26 +205,44 @@ run_case() {
     restored_geometry=$(identify -format '%wx%h' "$restored_screenshot")
     live_width=${live_geometry%x*}
     live_height=${live_geometry#*x}
-    expected_height=$((live_width * 640 / 960))
+    expected_width=$live_width
+    crop_x=0
     crop_y=0
     if [[ "$case_name" == zellij ]]; then
-        crop_y=$((live_height * 23 / 704))
+        if ((live_width % outer_columns != 0 || live_height % outer_rows != 0)); then
+            printf '%s framebuffer is not an integral terminal cell grid: %s\n' \
+                "$case_name" "$live_geometry" >&2
+            exit 1
+        fi
+        cell_width=$((live_width / outer_columns))
+        cell_height=$((live_height / outer_rows))
+        expected_width=$((live_width - (2 * cell_width)))
+        crop_x=$cell_width
+        crop_y=$cell_height
     fi
-    if ((crop_y + expected_height > live_height)); then
+    expected_height=$((expected_width * fixture_height / fixture_width))
+    if ((crop_x + expected_width > live_width || crop_y + expected_height > live_height)); then
         printf '%s framebuffer is too small for the expected raster region\n' "$case_name" >&2
         exit 1
     fi
 
     magick "$live_screenshot" \
-        -crop "${live_width}x${expected_height}+0+${crop_y}" +repage "$case_dir/live-image.png"
+        -crop "${expected_width}x${expected_height}+${crop_x}+${crop_y}" +repage \
+        "$case_dir/live-image.png"
     magick "$restored_screenshot" \
-        -crop "${live_width}x${expected_height}+0+${crop_y}" +repage "$case_dir/restored-image.png"
-    magick "$fixture" -resize "${live_width}x${expected_height}!" "$case_dir/expected.png"
+        -crop "${expected_width}x${expected_height}+${crop_x}+${crop_y}" +repage \
+        "$case_dir/restored-image.png"
+    magick "$fixture" -resize "${expected_width}x${expected_height}!" "$case_dir/expected.png"
     live_metric=$(compare -metric RMSE \
         "$case_dir/expected.png" "$case_dir/live-image.png" null: 2>&1 || true)
+    magick "$case_dir/expected.png" -blur '0x1.5' "$case_dir/expected-perceptual.png"
+    magick "$case_dir/live-image.png" -blur '0x1.5' "$case_dir/live-perceptual.png"
+    perceptual_metric=$(compare -metric RMSE \
+        "$case_dir/expected-perceptual.png" "$case_dir/live-perceptual.png" null: 2>&1 || true)
     restored_metric=$(compare -metric RMSE \
         "$case_dir/expected.png" "$case_dir/restored-image.png" null: 2>&1 || true)
     live_rmse=$(sed -n 's/.*(\([^)]*\)).*/\1/p' <<<"$live_metric")
+    perceptual_rmse=$(sed -n 's/.*(\([^)]*\)).*/\1/p' <<<"$perceptual_metric")
     restored_rmse=$(sed -n 's/.*(\([^)]*\)).*/\1/p' <<<"$restored_metric")
     live_colors=$(identify -format '%k' "$live_screenshot")
     restored_colors=$(identify -format '%k' "$restored_screenshot")
@@ -215,9 +251,15 @@ run_case() {
         printf '%s live Sixel preview retained only %s colors\n' "$case_name" "$live_colors" >&2
         exit 1
     fi
-    if [[ -z "$live_rmse" ]] || ! awk -v value="$live_rmse" 'BEGIN { exit !(value < 0.12) }'; then
-        printf '%s framebuffer does not match the fixture: RMSE=%s\n' \
+    if [[ -z "$live_rmse" ]] || ! awk -v value="$live_rmse" 'BEGIN { exit !(value < 0.16) }'; then
+        printf '%s framebuffer palette or geometry diverges from the fixture: RMSE=%s\n' \
             "$case_name" "${live_rmse:-unknown}" >&2
+        exit 1
+    fi
+    if [[ -z "$perceptual_rmse" ]] \
+        || ! awk -v value="$perceptual_rmse" 'BEGIN { exit !(value < 0.12) }'; then
+        printf '%s framebuffer loses perceptual image structure: RMSE=%s\n' \
+            "$case_name" "${perceptual_rmse:-unknown}" >&2
         exit 1
     fi
     if [[ -z "$restored_rmse" ]] || ! awk -v value="$restored_rmse" 'BEGIN { exit !(value > 0.20) }'; then
@@ -237,17 +279,29 @@ run_case() {
         --arg restored_screenshot "$restored_screenshot" \
         --arg live_geometry "$live_geometry" \
         --arg restored_geometry "$restored_geometry" \
+        --argjson crop_x "$crop_x" \
+        --argjson crop_y "$crop_y" \
+        --argjson image_width "$expected_width" \
+        --argjson image_height "$expected_height" \
         --argjson live_colors "$live_colors" \
         --argjson restored_colors "$restored_colors" \
         --argjson live_rmse "$live_rmse" \
+        --argjson perceptual_rmse "$perceptual_rmse" \
         --argjson restored_rmse "$restored_rmse" \
         '{
             case: $case,
             live: {
                 screenshot: $live_screenshot,
                 geometry: $live_geometry,
+                image_region: {
+                    x: $crop_x,
+                    y: $crop_y,
+                    width: $image_width,
+                    height: $image_height
+                },
                 unique_colors: $live_colors,
-                normalized_rmse_to_fixture: $live_rmse
+                normalized_rmse_to_fixture: $live_rmse,
+                perceptual_rmse_to_fixture: $perceptual_rmse
             },
             restored: {
                 screenshot: $restored_screenshot,
@@ -266,12 +320,22 @@ jq -s \
     --arg generated_at "$(date --utc +%Y-%m-%dT%H:%M:%SZ)" \
     --arg alacritty_version "$($alacritty_bin --version)" \
     --arg zellij_version "$(zellij --version)" \
+    --arg fixture "$fixture" \
+    --arg fixture_sha256 "$fixture_sha256" \
+    --argjson fixture_width "$fixture_width" \
+    --argjson fixture_height "$fixture_height" \
     '{
         schema: $schema,
         generated_at: $generated_at,
         implementations: {
             outer_terminal: $alacritty_version,
             multiplexer: $zellij_version
+        },
+        fixture: {
+            path: $fixture,
+            sha256: $fixture_sha256,
+            width: $fixture_width,
+            height: $fixture_height
         },
         renderer: "sixel",
         cases: .

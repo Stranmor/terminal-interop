@@ -278,10 +278,44 @@ fn geometry_stop_reason(response: &[u8]) -> Option<StopReason> {
         .then_some(StopReason::CapabilityAndBarrierObserved)
 }
 
+fn validated_tty_pixels(
+    columns: u16,
+    rows: u16,
+    observed_columns: u16,
+    observed_rows: u16,
+    pixel_width: u16,
+    pixel_height: u16,
+) -> (Option<u32>, Option<u32>) {
+    if columns != observed_columns || rows != observed_rows || pixel_width == 0 || pixel_height == 0
+    {
+        return (None, None);
+    }
+    (Some(u32::from(pixel_width)), Some(u32::from(pixel_height)))
+}
+
 fn observe_viewport(args: &PreviewArgs, transport: TransportKind) -> Result<Viewport, AppError> {
     let tty = OpenOptions::new().read(true).write(true).open(&args.tty)?;
     let (Width(columns), Height(rows)) = terminal_size_of(&tty)
         .ok_or_else(|| AppError::TerminalGeometryUnavailable(args.tty.clone()))?;
+    let (tty_pixel_width, tty_pixel_height) =
+        rustix::termios::tcgetwinsize(&tty).ok().map_or((None, None), |winsize| {
+            validated_tty_pixels(
+                columns,
+                rows,
+                winsize.ws_col,
+                winsize.ws_row,
+                winsize.ws_xpixel,
+                winsize.ws_ypixel,
+            )
+        });
+    if tty_pixel_width.is_some() && tty_pixel_height.is_some() {
+        return Ok(Viewport {
+            columns,
+            rows,
+            pixel_width: tty_pixel_width,
+            pixel_height: tty_pixel_height,
+        });
+    }
 
     let logical_request = build_geometry_query();
     let wire_request = transport_payload(transport, &logical_request);
@@ -513,5 +547,16 @@ mod tests {
         if env::var_os("TMUX").is_none() {
             assert!(matches!(resolved_transport(PreviewTransport::Auto), TransportKind::Direct));
         }
+    }
+
+    #[test]
+    fn accepts_kernel_pixels_for_the_exact_tty_surface() {
+        assert_eq!(validated_tty_pixels(98, 30, 98, 30, 882, 660), (Some(882), Some(660)));
+    }
+
+    #[test]
+    fn rejects_kernel_pixels_from_another_surface_or_without_pixel_extent() {
+        assert_eq!(validated_tty_pixels(98, 30, 100, 32, 900, 704), (None, None));
+        assert_eq!(validated_tty_pixels(98, 30, 98, 30, 0, 0), (None, None));
     }
 }

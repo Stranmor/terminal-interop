@@ -30,9 +30,13 @@ KGP receives canonical metadata-free PNG in bounded chunks, uses an image number
 identity, and emits a matching delete operation during restoration. Sixel receives RGBA resized to
 the observed pixel viewport with Lanczos3 filtering and a pure-Rust encoder.
 
-Terminal geometry queries pair pixel-area (`CSI 14 t`) and cell-area (`CSI 18 t`) observations.
-Pixel geometry is used only when the reported cell dimensions match the current TTY surface;
-otherwise the consumer falls back to conservative cell-derived geometry.
+On Unix, the consumer first reads the PTY's `TIOCGWINSZ` cell and pixel extents and accepts the
+pixel dimensions only when both belong to the active TTY surface. If the PTY does not carry pixel
+extent, terminal geometry queries pair pixel-area (`CSI 14 t`) and cell-area (`CSI 18 t`)
+observations. Query-derived pixels are likewise accepted only when the reported cell dimensions
+match the current TTY surface; otherwise the consumer falls back to conservative cell-derived
+geometry. This prevents an outer terminal window measurement from being misapplied to a smaller
+multiplexer pane.
 
 ## Text
 

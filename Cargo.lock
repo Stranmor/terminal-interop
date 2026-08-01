@@ -851,6 +851,7 @@ dependencies = [
  "base64",
  "clap",
  "nix",
+ "rustix",
  "schemars",
  "serde",
  "serde_json",
