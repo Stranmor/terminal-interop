@@ -18,4 +18,6 @@ and the project intends to use [Semantic Versioning](https://semver.org/).
 - Same-TTY interactive preview with explicit close and screen restoration.
 - Isolated real-terminal and framebuffer E2E coverage for Kitty, tmux, Zellij, and an exact
   Alacritty graphics candidate.
+- Authenticated OpenSSH PTY E2E for remote Sixel images and sanitized Unicode text, including
+  inert Enter, explicit close, restoration, and one-window assertions.
 - Content-addressed local installer and `zv` convenience command.

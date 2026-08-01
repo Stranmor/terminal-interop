@@ -30,6 +30,16 @@ Sixel framebuffer verification additionally requires an explicitly supplied Alac
 TERM_INTEROP_ALACRITTY_BIN=/path/to/alacritty ./tests/e2e-preview-sixel.sh
 ```
 
+SSH transport verification additionally requires an already authorized BatchMode target and an
+absolute remote CLI path. The test creates and removes only its own validated temporary directory:
+
+```bash
+TERM_INTEROP_SSH_TARGET=user@host \
+TERM_INTEROP_SSH_BIN=/absolute/remote/path/to/term-interop \
+TERM_INTEROP_ALACRITTY_BIN=/path/to/sixel-terminal \
+    ./tests/e2e-preview-ssh.sh
+```
+
 ## Contract changes
 
 - Preserve exact wire evidence separately from interpretation.

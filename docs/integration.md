@@ -20,6 +20,17 @@ scan the workspace or register unrelated files.
 the CLI on the remote side and invoke it in the interactive session. Pixel protocol bytes traverse
 the existing PTY/SSH chain; no artifact file transfer or HTTP service is introduced.
 
+The repository includes a black-box SSH harness that verifies both pixel and text consumers over
+an authenticated remote PTY. It requires a target already authorized for non-interactive login and
+never records the target identity:
+
+```bash
+TERM_INTEROP_SSH_TARGET=user@host \
+TERM_INTEROP_SSH_BIN=/absolute/remote/path/to/term-interop \
+TERM_INTEROP_ALACRITTY_BIN=/path/to/sixel-terminal \
+    ./tests/e2e-preview-ssh.sh
+```
+
 ## Embedding TUI
 
 An interactive parent cannot safely keep reading the TTY while the preview reads close keys. The

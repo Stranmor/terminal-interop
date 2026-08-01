@@ -1,7 +1,10 @@
 # Terminal Interop
 
-Terminal-native previews for agent artifacts, built from small versioned contracts instead of
-terminal-name heuristics.
+Open agent-linked images and text over SSH without reconstructing wrapped paths, opening a GUI
+window, or pretending character art is a pixel preview.
+
+Terminal Interop is an open, terminal-neutral set of versioned contracts plus a Rust reference
+implementation. It derives capability from live evidence instead of terminal-name heuristics.
 
 An agent can offer one completed file as an opaque short reference. A human or another tool can
 then preview that exact file in the current terminal: sanitized text in a pager, or real pixels
@@ -87,6 +90,7 @@ The schemas and semantics are documented independently:
 - [Preview profile v1](docs/preview-profile-v1.md)
 - [Compatibility evidence](docs/compatibility.md)
 - [Consumer integration](docs/integration.md)
+- [Reproducible evidence demo](docs/demo.md)
 
 ## Security model
 
@@ -112,6 +116,12 @@ shellcheck install.sh scripts/zv tests/*.sh tests/fixtures/*.sh
 ./tests/e2e-hidden-kitty.sh
 ./tests/e2e-preview-kitty.sh
 ./tests/e2e-preview-text.sh
+TERM_INTEROP_ALACRITTY_BIN=/path/to/sixel-terminal \
+    ./tests/e2e-preview-sixel.sh
+TERM_INTEROP_SSH_TARGET=user@host \
+TERM_INTEROP_SSH_BIN=/absolute/remote/path/to/term-interop \
+TERM_INTEROP_ALACRITTY_BIN=/path/to/sixel-terminal \
+    ./tests/e2e-preview-ssh.sh
 ```
 
 The framebuffer E2E suite launches isolated terminals, renders a high-frequency raster fixture,
