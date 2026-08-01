@@ -23,6 +23,10 @@ use terminal_interop_core::{
     TransportReadiness, WireEvent, WireEventRole, WireExchange,
 };
 use terminal_interop_da1::parse_responses as parse_da1_responses;
+use terminal_interop_intent::{
+    EndpointId, INTENT_RECEIPT_SCHEMA_V1, IntentDeliveryState, IntentListener, IntentReadyV1,
+    OpenIntentV1, dispatch as dispatch_intent, runtime_root as intent_runtime_root,
+};
 use terminal_interop_kgp::{
     adapter_identity as kgp_adapter_identity, build_query as build_kgp_query,
     capability_id as kgp_capability_id, parse_exchange as parse_kgp_exchange,
@@ -62,6 +66,11 @@ enum Command {
     Offer(OfferArgs),
     /// Preview one text or raster artifact in the current terminal context.
     Preview(PreviewArgs),
+    /// Create or deliver a local callback intent to an exact interactive consumer.
+    Intent {
+        #[command(subcommand)]
+        command: IntentCommand,
+    },
     /// Execute a live protocol probe through one TTY chain.
     Probe {
         #[command(subcommand)]
@@ -81,6 +90,41 @@ enum Command {
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum SchemaDocument {
     Receipt,
+    OpenIntent,
+    IntentReceipt,
+    IntentReady,
+}
+
+#[derive(Debug, Subcommand)]
+enum IntentCommand {
+    /// Generate one unguessable endpoint identity.
+    Endpoint,
+    /// Build an exact-path open URI for a bound endpoint.
+    Uri {
+        /// Endpoint identity printed by `intent endpoint` or supplied by the embedding consumer.
+        endpoint: String,
+        /// Absolute artifact path carried as data in the intent.
+        path: PathBuf,
+    },
+    /// Bind a private local endpoint and forward validated intents as JSON Lines on stdout.
+    Listen {
+        /// Exact endpoint identity owned by this consumer.
+        endpoint: String,
+        /// Exit after forwarding one intent.
+        #[arg(long)]
+        once: bool,
+    },
+    /// Deliver one callback URI to its bound local consumer.
+    Dispatch {
+        /// Versioned `terminal-interop-intent://` URI.
+        uri: String,
+        /// Read and write deadline in milliseconds.
+        #[arg(long, default_value_t = 1_500)]
+        timeout_ms: u64,
+        /// Suppress the successful forwarding receipt.
+        #[arg(long)]
+        quiet: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -171,6 +215,10 @@ enum AppError {
     Artifact(#[from] terminal_interop_artifact::ArtifactError),
     #[error("artifact reference failed: {0}")]
     Registry(#[from] terminal_interop_ref::RegistryError),
+    #[error("intent callback failed: {0}")]
+    Intent(#[from] terminal_interop_intent::IntentError),
+    #[error("intent consumer rejected the request: {0}")]
+    IntentRejected(String),
     #[error("Sixel encoding failed: {0}")]
     SixelEncoding(String),
     #[error("artifact is not a regular file: {0}")]
@@ -189,6 +237,8 @@ enum AppError {
     ZeroTimeout,
     #[error("timeout is outside the monotonic clock range")]
     TimeoutOutOfRange,
+    #[error("intent timeout must be greater than zero")]
+    ZeroIntentTimeout,
     #[error("transport timeout must be greater than zero")]
     ZeroTransportTimeout,
     #[error("max response bytes must be greater than zero")]
@@ -531,10 +581,82 @@ fn offer_artifact(args: &OfferArgs) -> Result<(), AppError> {
     write_output(None, &bytes)
 }
 
+fn intent_endpoint() -> Result<(), AppError> {
+    write_output(None, format!("{}\n", EndpointId::generate()?.as_str()).as_bytes())
+}
+
+fn intent_uri(endpoint: &str, path: &Path) -> Result<(), AppError> {
+    let endpoint = EndpointId::parse(endpoint)?;
+    let intent = OpenIntentV1::from_path(endpoint, path)?;
+    write_output(None, format!("{}\n", intent.uri()?).as_bytes())
+}
+
+fn listen_for_intents(endpoint: &str, once: bool) -> Result<(), AppError> {
+    let endpoint = EndpointId::parse(endpoint)?;
+    let listener = IntentListener::bind(&intent_runtime_root()?, endpoint.clone())?;
+    write_output(None, &serialized_json(&IntentReadyV1::new(endpoint.clone()), false)?)?;
+
+    loop {
+        let incoming = match listener.accept() {
+            Ok(incoming) => incoming,
+            Err(error) => {
+                eprintln!("term-interop: rejected malformed intent: {error}");
+                continue;
+            },
+        };
+        let bytes = serialized_json(&incoming.intent, false)?;
+        let forward_result = write_output(None, &bytes);
+        let receipt = match &forward_result {
+            Ok(()) => terminal_interop_intent::IntentReceiptV1::forwarded(endpoint.clone()),
+            Err(error) => terminal_interop_intent::IntentReceiptV1::rejected(
+                endpoint.clone(),
+                format!("consumer handoff failed: {error}"),
+            ),
+        };
+        incoming.respond(&receipt)?;
+        forward_result?;
+        if once {
+            return Ok(());
+        }
+    }
+}
+
+fn dispatch_callback(uri: &str, timeout_ms: u64, quiet: bool) -> Result<(), AppError> {
+    if timeout_ms == 0 {
+        return Err(AppError::ZeroIntentTimeout);
+    }
+    let intent = OpenIntentV1::parse_uri(uri)?;
+    let receipt =
+        dispatch_intent(&intent_runtime_root()?, &intent, Duration::from_millis(timeout_ms))?;
+    if receipt.schema != INTENT_RECEIPT_SCHEMA_V1 {
+        return Err(AppError::IntentRejected(format!(
+            "unsupported receipt schema {}",
+            receipt.schema
+        )));
+    }
+    if receipt.state != IntentDeliveryState::Forwarded {
+        return Err(AppError::IntentRejected(receipt.detail));
+    }
+    if !quiet {
+        write_output(None, &serialized_json(&receipt, false)?)?;
+    }
+    Ok(())
+}
+
 fn run(cli: Cli) -> Result<(), AppError> {
     match cli.command {
         Command::Offer(args) => offer_artifact(&args),
         Command::Preview(args) => preview::run(&args),
+        Command::Intent { command: IntentCommand::Endpoint } => intent_endpoint(),
+        Command::Intent { command: IntentCommand::Uri { endpoint, path } } => {
+            intent_uri(&endpoint, &path)
+        },
+        Command::Intent { command: IntentCommand::Listen { endpoint, once } } => {
+            listen_for_intents(&endpoint, once)
+        },
+        Command::Intent { command: IntentCommand::Dispatch { uri, timeout_ms, quiet } } => {
+            dispatch_callback(&uri, timeout_ms, quiet)
+        },
         Command::Probe { protocol: ProbeProtocol::Kgp(args) } => {
             let receipt = kgp_receipt(&args)?;
             emit_probe_receipt(&receipt, &args.common)
@@ -545,6 +667,21 @@ fn run(cli: Cli) -> Result<(), AppError> {
         },
         Command::Schema { document: SchemaDocument::Receipt, pretty } => {
             let schema = schema_for!(ProbeReceiptV1);
+            let bytes = serialized_json(&schema, pretty)?;
+            write_output(None, &bytes)
+        },
+        Command::Schema { document: SchemaDocument::OpenIntent, pretty } => {
+            let schema = schema_for!(OpenIntentV1);
+            let bytes = serialized_json(&schema, pretty)?;
+            write_output(None, &bytes)
+        },
+        Command::Schema { document: SchemaDocument::IntentReceipt, pretty } => {
+            let schema = schema_for!(terminal_interop_intent::IntentReceiptV1);
+            let bytes = serialized_json(&schema, pretty)?;
+            write_output(None, &bytes)
+        },
+        Command::Schema { document: SchemaDocument::IntentReady, pretty } => {
+            let schema = schema_for!(IntentReadyV1);
             let bytes = serialized_json(&schema, pretty)?;
             write_output(None, &bytes)
         },

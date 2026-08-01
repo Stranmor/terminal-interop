@@ -29,3 +29,13 @@ and the project intends to use [Semantic Versioning](https://semver.org/).
   panes.
 - The Sixel framebuffer E2E accepts an explicit external fixture and records its dimensions and
   SHA-256, so photographic quality can be verified without replacing the canonical test image.
+
+### Added
+
+- Intent callback v1: a terminal-neutral, private Unix-socket return channel that lets OSC 8
+  hyperlinks reopen artifacts in their exact originating TUI instead of launching or guessing a
+  terminal session.
+- A generated desktop scheme handler and a black-box callback E2E covering ready, forwarded, and
+  stale-endpoint states.
+- Zellij integration guidance for preserving OSC 8 metadata and using the standard Shift-click
+  mouse bypass without coupling the callback protocol to Zellij.

@@ -4,6 +4,7 @@ members = [
     "crates/terminal-interop-core",
     "crates/terminal-interop-da1",
     "crates/terminal-interop-geometry",
+    "crates/terminal-interop-intent",
     "crates/terminal-interop-kgp",
     "crates/terminal-interop-ref",
     "crates/terminal-interop-sixel",

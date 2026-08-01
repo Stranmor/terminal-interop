@@ -860,6 +860,7 @@ dependencies = [
  "terminal-interop-core",
  "terminal-interop-da1",
  "terminal-interop-geometry",
+ "terminal-interop-intent",
  "terminal-interop-kgp",
  "terminal-interop-ref",
  "terminal-interop-sixel",
@@ -890,6 +891,19 @@ name = "terminal-interop-geometry"
 version = "0.1.0"
 dependencies = [
  "base64",
+]
+
+[[package]]
+name = "terminal-interop-intent"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "getrandom 0.3.4",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]

@@ -36,6 +36,9 @@ $ zv @6W4D9F2K8M7QH
   protocol conformance come from live wire evidence.
 - **No vendor-shaped core.** Artifact validation, references, probes, geometry, transports, KGP,
   Sixel, and the interactive consumer are replaceable crates with narrow contracts.
+- **Clickable links can return to the originating TUI.** A private versioned intent callback
+  carries an external OSC 8 click back to the exact consumer instead of guessing a pane or opening
+  another terminal.
 
 ## Install
 
@@ -60,6 +63,7 @@ cargo build --release --locked -p terminal-interop-cli
 ```text
 term-interop offer PATH [--format short|uri|json]
 term-interop preview PATH_OR_REFERENCE [--backend auto|kgp|sixel]
+term-interop intent endpoint|uri|listen|dispatch
 term-interop probe kgp [--transport direct|tmux-passthrough] [--pretty]
 term-interop probe sixel [--transport direct|tmux-passthrough] [--pretty]
 term-interop schema receipt --pretty
@@ -70,6 +74,15 @@ Text navigation: `Space`/`j` next page, `k` previous page, `g` first page, `G` l
 
 `--transport auto` enables tmux DCS passthrough only when a tmux environment marker is present.
 Direct TTY remains the default for terminals, Zellij, and SSH sessions.
+
+Zellij must preserve OSC 8 metadata for clickable callbacks:
+
+```kdl
+osc8_hyperlinks true
+```
+
+With `mouse_mode true`, use `Shift+click` so the terminal handles the link instead of Zellij's
+mouse protocol. A direct terminal uses an ordinary click.
 
 ## Contracts
 
@@ -88,6 +101,7 @@ The schemas and semantics are documented independently:
 - [Artifact reference v1](docs/artifact-ref-v1.md)
 - [Probe receipt v1](docs/probe-receipt-v1.md)
 - [Preview profile v1](docs/preview-profile-v1.md)
+- [Intent callback v1](docs/intent-callback-v1.md)
 - [Compatibility evidence](docs/compatibility.md)
 - [Consumer integration](docs/integration.md)
 - [Reproducible evidence demo](docs/demo.md)
@@ -116,6 +130,7 @@ shellcheck install.sh scripts/zv tests/*.sh tests/fixtures/*.sh
 ./tests/e2e-hidden-kitty.sh
 ./tests/e2e-preview-kitty.sh
 ./tests/e2e-preview-text.sh
+./tests/e2e-intent-callback.sh
 TERM_INTEROP_ALACRITTY_BIN=/path/to/sixel-terminal \
     ./tests/e2e-preview-sixel.sh
 TERM_INTEROP_SSH_TARGET=user@host \

@@ -45,6 +45,16 @@ parent must perform this handoff:
 This is a lifecycle contract, not a Codex-specific API. Any TUI, multiplexer plugin, editor, or
 agent client can implement the same handoff.
 
+For clickable OSC 8 file links, bind an [intent callback v1](intent-callback-v1.md) endpoint and
+encode it into the hyperlink. The system URL handler then returns the click to this exact consumer;
+the consumer must still verify that the received path belongs to its current artifact set before
+performing the handoff above.
+
+Multiplexers are part of the hyperlink transport. For Zellij, enable `osc8_hyperlinks true`; when
+Zellij mouse mode is enabled, `Shift+click` is the standard bypass that lets the outer terminal
+consume the OSC 8 link. This affects only how the click reaches the desktop handler. The callback
+endpoint and same-TTY handoff remain multiplexer-neutral.
+
 ## Failure behavior
 
 An embedding consumer should keep these failures distinct:
