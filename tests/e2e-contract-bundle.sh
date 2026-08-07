@@ -77,7 +77,7 @@ while IFS=$'\t' read -r expected relative_path; do
     esac
 done < <(jq -r '.vectors[] | [.expected, .path] | @tsv' "$bundle_dir/manifest.json")
 
-cat "$bundle_dir/fixtures/valid/artifact-ref.json" | "$interop_bin" validate --quiet
+"$interop_bin" validate --quiet < "$bundle_dir/fixtures/valid/artifact-ref.json"
 python3 "$project_dir/examples/consume-negotiation.py" \
     "$bundle_dir/fixtures/valid/negotiation-selected.json" \
     | jq -e '.state == "selected" and .preference == 0' >/dev/null
