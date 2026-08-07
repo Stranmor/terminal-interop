@@ -3,8 +3,9 @@
 Contributions are welcome when they preserve the separation between semantic
 contracts, protocol adapters, transport adapters, and consumer integrations.
 
-The repository pins its development formatter and linter in `rust-toolchain.toml`; the separate
-MSRV job proves that library and CLI code still builds and tests on Rust 1.90.0.
+The repository pins its development toolchain in `rust-toolchain.toml` and its formatting policy
+in `rustfmt.toml`; the separate MSRV job proves that library and CLI code still builds and tests
+on Rust 1.90.0.
 
 ## Development checks
 

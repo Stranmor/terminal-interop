@@ -16,6 +16,8 @@ jobs:
         with:
           toolchain: 1.97.1
           components: clippy, rustfmt
+      - name: Toolchain versions
+        run: rustc --version && rustfmt --version
       - name: Install ShellCheck
         run: sudo apt-get update && sudo apt-get install --yes shellcheck
       - run: cargo fmt --all -- --check
