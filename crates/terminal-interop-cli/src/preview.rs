@@ -17,7 +17,7 @@ use terminal_interop_artifact::{
     DEFAULT_MAX_INPUT_BYTES, RasterArtifact, RasterLimits, Viewport, decode_raster, fit_raster,
     resize_rgba, sanitize_text,
 };
-use terminal_interop_core::{Availability, Conformance, ProbeReceiptV1, TransportReadiness};
+use terminal_interop_core::{ProbeReceiptV1, receipt_is_eligible};
 use terminal_interop_geometry::{build_geometry_query, parse_window_cells, parse_window_pixels};
 use terminal_interop_kgp::{PngDisplayOptions, delete_image_number, encode_png_display};
 use terminal_interop_sixel::encode_rgba_default;
@@ -151,15 +151,6 @@ fn common_probe_args(args: &PreviewArgs, transport: TransportKind) -> TtyProbeAr
     }
 }
 
-const fn receipt_usable(receipt: &ProbeReceiptV1) -> bool {
-    matches!(receipt.assessment.availability, Availability::Available)
-        && matches!(receipt.assessment.conformance, Conformance::Conformant)
-        && matches!(
-            receipt.context.transport.readiness,
-            TransportReadiness::NotRequired | TransportReadiness::Ready
-        )
-}
-
 fn receipt_summary(receipt: &ProbeReceiptV1) -> String {
     format!(
         "availability={:?}, conformance={:?}, transport={:?}",
@@ -182,7 +173,7 @@ fn select_renderer(args: &PreviewArgs, transport: TransportKind) -> Result<Rende
     match args.backend {
         PreviewBackend::Kgp => {
             let kgp = probe_kgp(args, transport)?;
-            if receipt_usable(&kgp) {
+            if receipt_is_eligible(&kgp) {
                 return Ok(Renderer::Kgp);
             }
             Err(AppError::NoPixelRenderer {
@@ -192,7 +183,7 @@ fn select_renderer(args: &PreviewArgs, transport: TransportKind) -> Result<Rende
         },
         PreviewBackend::Sixel => {
             let sixel = probe_sixel(args, transport)?;
-            if receipt_usable(&sixel) {
+            if receipt_is_eligible(&sixel) {
                 return Ok(Renderer::Sixel);
             }
             Err(AppError::NoPixelRenderer {
@@ -202,11 +193,11 @@ fn select_renderer(args: &PreviewArgs, transport: TransportKind) -> Result<Rende
         },
         PreviewBackend::Auto => {
             let kgp = probe_kgp(args, transport)?;
-            if receipt_usable(&kgp) {
+            if receipt_is_eligible(&kgp) {
                 return Ok(Renderer::Kgp);
             }
             let sixel = probe_sixel(args, transport)?;
-            if receipt_usable(&sixel) {
+            if receipt_is_eligible(&sixel) {
                 return Ok(Renderer::Sixel);
             }
             Err(AppError::NoPixelRenderer {

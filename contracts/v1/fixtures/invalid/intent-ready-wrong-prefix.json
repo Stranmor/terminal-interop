@@ -1,0 +1,5 @@
+{
+  "schema": "urn:terminal-interop:intent-ready:v1",
+  "endpoint": "0123456789abcdef0123456789abcdef",
+  "uri_prefix": "terminal-interop-intent://v1/open/fedcba9876543210fedcba9876543210/"
+}

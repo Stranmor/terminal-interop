@@ -1,0 +1,44 @@
+{
+  "schema": "urn:terminal-interop:public-demo-evidence:v1",
+  "captured_at": "2026-08-07T06:00:27Z",
+  "implementation": "term-interop 0.1.0",
+  "consumed_chain": [
+    {
+      "role": "renderer",
+      "implementation": "terminal-interop-sixel 0.1.0"
+    },
+    {
+      "role": "multiplexer",
+      "implementation": "zellij 0.44.3"
+    },
+    {
+      "role": "terminal",
+      "implementation": "alacritty 0.17.0-dev (3d658d2e)"
+    }
+  ],
+  "fixture": {
+    "sha256": "43998085a05823695d3b6b2000898b9bce8e3a882a93c6e1c2a13a12e388bfd9",
+    "width": 1200,
+    "height": 800
+  },
+  "capture": {
+    "path": "docs/assets/terminal-interop-zellij.png",
+    "sha256": "8e9636b8786365f3680ab08b285fea9b0d50aaf61f8a12d8c79f31bd5dd0abc3",
+    "width": 900,
+    "height": 704,
+    "image_region": {
+      "x": 9,
+      "y": 22,
+      "width": 882,
+      "height": 588
+    },
+    "unique_colors": 1233,
+    "normalized_rmse_to_fixture": 0.165439,
+    "perceptual_rmse_to_fixture": 0.118924
+  },
+  "lifecycle": {
+    "close_key": "q",
+    "caller_restored": true,
+    "separate_window_created": false
+  }
+}

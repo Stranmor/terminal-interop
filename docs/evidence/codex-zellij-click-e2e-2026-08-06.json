@@ -1,0 +1,48 @@
+{
+  "schema": "urn:terminal-interop:codex-zellij-click-e2e:v1",
+  "generated_at": "2026-08-06T18:34:58Z",
+  "environment": {
+    "codex_version": "0.146.1",
+    "codex_binary_sha256": "29834f15d6e556a837a6558fae02bd47ea4eb7084aed4d012e1c2ffbc4fa7394",
+    "compatibility_patch": "0033-redraw-transcript-after-artifact-preview.patch",
+    "compatibility_patch_sha256": "242dc2152b0e75f592229372ed708b90f4d83b647c106d29bd3e80c26239384c",
+    "terminal": "Alacritty 0.17.0-dev",
+    "multiplexer": "Zellij 0.44.3",
+    "interaction": "Shift+Button1"
+  },
+  "text_preview": {
+    "physical_mouse_click": true,
+    "intent_endpoint_bound_to_exact_codex": true,
+    "xdg_handler_returned_to_originating_tui": true,
+    "unicode_visible": true,
+    "enter_did_not_close_preview": true,
+    "q_restored_originating_chat": true,
+    "root_window_counts": {
+      "before": 1,
+      "during": 1,
+      "after": 1
+    }
+  },
+  "image_preview": {
+    "physical_mouse_click": true,
+    "intent_endpoint_bound_to_exact_codex": true,
+    "xdg_handler_returned_to_originating_tui": true,
+    "same_terminal_preview": true,
+    "high_color_framebuffer": true,
+    "unique_colors": 1439,
+    "normalized_rmse_to_fixture": 0.14032,
+    "perceptual_rmse_to_fixture": 0.112155,
+    "q_restored_originating_chat": true,
+    "root_window_counts": {
+      "before": 1,
+      "during": 1,
+      "after": 1
+    }
+  },
+  "persistence": {
+    "desktop_handler_exec": "~/.local/bin/term-interop intent dispatch --quiet %u",
+    "temporary_prefix_install_does_not_replace_live_handler": true,
+    "codex_update_closure_exact_ready": true,
+    "codex_update_closure_doctor_ok": true
+  }
+}

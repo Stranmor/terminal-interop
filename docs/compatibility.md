@@ -1,11 +1,12 @@
 # Compatibility evidence
 
 Compatibility is attached to exact consumed chains, not product families. This table records the
-local black-box evidence snapshot from 2026-08-01; unlisted combinations remain unknown.
+local black-box evidence snapshot from 2026-08-07; unlisted combinations remain unknown.
 
 | Chain | Capability/render result | Evidence |
 |---|---|---|
 | `term-interop -> Kitty 0.48.1` | KGP available and conformant; high-detail framebuffer preview; clean restore | `tests/e2e-hidden-kitty.sh`, `tests/e2e-preview-kitty.sh` |
+| `term-interop negotiate pixel -> Kitty 0.48.1` | KGP selected at preference 0; Sixel retained separately as unavailable | `tests/e2e-negotiation-kitty.sh` |
 | `term-interop text pager -> Kitty 0.48.1` | sanitized text and Unicode visible; Enter ignored; `q` restores caller | `tests/e2e-preview-text.sh` |
 | `term-interop -> tmux 3.7b -> Kitty 0.48.1` direct bytes | KGP unavailable on the direct path | `tests/e2e-hidden-kitty.sh` |
 | `term-interop -> tmux 3.7b DCS passthrough -> Kitty 0.48.1` | transport ready; KGP available and conformant | `tests/e2e-hidden-kitty.sh` |
@@ -14,6 +15,7 @@ local black-box evidence snapshot from 2026-08-01; unlisted combinations remain 
 | `term-interop -> Zellij 0.44.3 -> Alacritty 0.17.0-dev`, graphics revision `3d658d2e280d` | Sixel framebuffer preview and clean restore in an isolated Zellij configuration | `tests/e2e-preview-sixel.sh` |
 | `term-interop 0.1.0 -> OpenSSH_10.4p1 PTY -> Alacritty 0.17.0-dev`, graphics revision `3d658d2e280d` | Remote Sixel framebuffer matches the fixture; Enter is inert; `q` restores; one terminal window throughout | `tests/e2e-preview-ssh.sh` |
 | `term-interop 0.1.0 text pager -> OpenSSH_10.4p1 PTY -> Kitty 0.48.1` | Remote Unicode text visible; escape bytes inert; Enter is inert; `q` restores | `tests/e2e-preview-ssh.sh` |
+| `OSC 8 Shift-click -> Alacritty 0.17.0-dev -> Zellij 0.44.3 -> desktop handler -> exact intent endpoint` | Typed callback delivered to the bound consumer; no terminal or pane was guessed | `tests/e2e-intent-osc8-zellij.sh` |
 
 The Alacritty row is an exact experimental source revision, not a claim about the stable Alacritty
 release line. Supply its binary explicitly when running the suite:
@@ -25,6 +27,10 @@ TERM_INTEROP_ALACRITTY_BIN=/path/to/alacritty ./tests/e2e-preview-sixel.sh
 The Sixel suite starts fresh Xvfb, Alacritty, and Zellij instances. It does not reuse or mutate a
 user session. Its JSON summary keeps implementation versions, framebuffer dimensions, color
 counts, screenshots, and restoration evidence.
+
+The public Zellij capture and redacted receipt from the August 7 run are committed as
+`docs/assets/terminal-interop-zellij.png` and
+`docs/evidence/sixel-zellij-demo-2026-08-07.json`.
 
 The SSH rows use a real authenticated OpenSSH connection and allocated remote PTY against an
 isolated loopback target. The test copies only generated fixtures and its bounded runner into a

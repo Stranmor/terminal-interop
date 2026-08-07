@@ -1,0 +1,75 @@
+{
+  "schema": "urn:terminal-interop:capability-negotiation:v1",
+  "candidates": [
+    {
+      "preference": 0,
+      "disposition": "eligible",
+      "receipt": {
+        "schema": "urn:terminal-interop:probe-receipt:v1",
+        "observed_at_unix_ms": 0,
+        "capability": {
+          "protocol": {
+            "namespace": "org.example",
+            "name": "fixture-pixel-protocol",
+            "revision": "v1"
+          },
+          "name": "raster-image-display"
+        },
+        "adapter": { "name": "fixture-pixel-adapter", "version": "1.0.0" },
+        "correlation": { "namespace": "org.example.fixture", "value": "1" },
+        "context": {
+          "tty_endpoint": "/dev/tty",
+          "transport": {
+            "adapter": { "name": "direct-tty", "version": "1.0.0" },
+            "readiness": "not_required",
+            "preparation_exchanges": []
+          },
+          "environment_hints": [],
+          "topology": { "state": "unknown" }
+        },
+        "exchange": {
+          "logical_request_base64": "cHJvYmU=",
+          "wire_request_base64": "cHJvYmU=",
+          "response_base64": "b2s=",
+          "events": [
+            {
+              "sequence": 0,
+              "role": "capability_reply",
+              "protocol": {
+                "namespace": "org.example",
+                "name": "fixture-pixel-protocol",
+                "revision": "v1"
+              },
+              "correlation": "1",
+              "status": "OK",
+              "fields": {},
+              "raw_base64": "b2s="
+            }
+          ],
+          "elapsed_ms": 1,
+          "stop_reason": "end_of_input"
+        },
+        "assessment": {
+          "availability": "available",
+          "conformance": "conformant",
+          "assertions": [
+            { "id": "fixture.correlated-reply", "outcome": "pass", "detail": "fixture reply observed" }
+          ]
+        }
+      }
+    }
+  ],
+  "selection": {
+    "state": "selected",
+    "preference": 0,
+    "capability": {
+      "protocol": {
+        "namespace": "org.example",
+        "name": "fixture-pixel-protocol",
+        "revision": "v1"
+      },
+      "name": "raster-image-display"
+    },
+    "adapter": { "name": "fixture-pixel-adapter", "version": "1.0.0" }
+  }
+}

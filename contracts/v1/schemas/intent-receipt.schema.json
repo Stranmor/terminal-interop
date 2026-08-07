@@ -1,0 +1,40 @@
+{
+  "$defs": {
+    "EndpointId": {
+      "pattern": "^[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "IntentDeliveryState": {
+      "enum": [
+        "forwarded",
+        "rejected"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "urn:terminal-interop:intent-receipt:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "detail": {
+      "type": "string"
+    },
+    "endpoint": {
+      "$ref": "#/$defs/EndpointId"
+    },
+    "schema": {
+      "const": "urn:terminal-interop:intent-receipt:v1"
+    },
+    "state": {
+      "$ref": "#/$defs/IntentDeliveryState"
+    }
+  },
+  "required": [
+    "schema",
+    "endpoint",
+    "state",
+    "detail"
+  ],
+  "title": "IntentReceiptV1",
+  "type": "object"
+}

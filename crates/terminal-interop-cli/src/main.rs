@@ -8,7 +8,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use nix::errno::Errno;
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use nix::sys::termios::{FlushArg, SetArg, Termios, cfmakeraw, tcflush, tcgetattr, tcsetattr};
-use schemars::schema_for;
+use schemars::{JsonSchema, schema_for};
 use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -18,14 +18,16 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
 use terminal_interop_core::{
-    AdapterIdentity, CorrelationId, EnvironmentHint, HintObservation, PROBE_RECEIPT_SCHEMA_V1,
-    ProbeContext, ProbeReceiptV1, StopReason, TopologyObservation, TransportEvidence,
-    TransportReadiness, WireEvent, WireEventRole, WireExchange,
+    AdapterIdentity, CAPABILITY_NEGOTIATION_SCHEMA_V1, CapabilityNegotiationV1, CorrelationId,
+    EnvironmentHint, HintObservation, PROBE_RECEIPT_SCHEMA_V1, ProbeContext, ProbeReceiptV1,
+    StopReason, TopologyObservation, TransportEvidence, TransportReadiness, WireEvent,
+    WireEventRole, WireExchange, negotiate_capabilities_v1,
 };
 use terminal_interop_da1::parse_responses as parse_da1_responses;
 use terminal_interop_intent::{
-    EndpointId, INTENT_RECEIPT_SCHEMA_V1, IntentDeliveryState, IntentListener, IntentReadyV1,
-    OpenIntentV1, dispatch as dispatch_intent, runtime_root as intent_runtime_root,
+    EndpointId, INTENT_READY_SCHEMA_V1, INTENT_RECEIPT_SCHEMA_V1, IntentDeliveryState,
+    IntentListener, IntentReadyV1, OPEN_INTENT_SCHEMA_V1, OpenIntentV1,
+    dispatch as dispatch_intent, runtime_root as intent_runtime_root,
 };
 use terminal_interop_kgp::{
     adapter_identity as kgp_adapter_identity, build_query as build_kgp_query,
@@ -48,12 +50,13 @@ const DEFAULT_TIMEOUT_MS: u64 = 750;
 const DEFAULT_TRANSPORT_TIMEOUT_MS: u64 = 1_500;
 const TRANSPORT_ATTEMPT_TIMEOUT_MS: u64 = 100;
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 64 * 1024;
+const MAX_CONTRACT_DOCUMENT_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Parser)]
 #[command(
     name = "term-interop",
     version,
-    about = "Same-TTY text and pixel previews with evidence-grade capability negotiation"
+    about = "Artifact handoff and live capability negotiation for terminal applications"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -76,6 +79,11 @@ enum Command {
         #[command(subcommand)]
         protocol: ProbeProtocol,
     },
+    /// Select an eligible capability from ordered live probe evidence.
+    Negotiate {
+        #[command(subcommand)]
+        profile: NegotiationProfile,
+    },
     /// Emit a machine-readable interoperability schema.
     Schema {
         /// Contract to emit.
@@ -85,11 +93,25 @@ enum Command {
         #[arg(long)]
         pretty: bool,
     },
+    /// Validate one versioned contract document from a file or standard input.
+    Validate(ValidateArgs),
+}
+
+#[derive(Debug, Args)]
+struct ValidateArgs {
+    /// JSON document path, or `-` to read standard input.
+    #[arg(default_value = "-")]
+    input: PathBuf,
+    /// Emit no success message; the exit status remains authoritative.
+    #[arg(long)]
+    quiet: bool,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum SchemaDocument {
     Receipt,
+    ArtifactRef,
+    Negotiation,
     OpenIntent,
     IntentReceipt,
     IntentReady,
@@ -159,6 +181,47 @@ enum ProbeProtocol {
     Sixel(SixelProbeArgs),
 }
 
+#[derive(Debug, Subcommand)]
+enum NegotiationProfile {
+    /// Probe KGP then Sixel and emit the complete pixel-preview selection receipt.
+    Pixel(PixelNegotiationArgs),
+}
+
+#[derive(Debug, Args)]
+struct PixelNegotiationArgs {
+    /// Response deadline for each protocol probe in milliseconds.
+    #[arg(long, default_value_t = DEFAULT_TIMEOUT_MS)]
+    timeout_ms: u64,
+    /// Maximum response bytes retained from each probe.
+    #[arg(long, default_value_t = DEFAULT_MAX_RESPONSE_BYTES)]
+    max_response_bytes: usize,
+    /// TTY endpoint used for the bidirectional exchanges.
+    #[arg(long, default_value = DEFAULT_TTY)]
+    tty: PathBuf,
+    /// Transport policy for the pixel profile.
+    #[arg(long, value_enum, default_value_t = NegotiationTransport::Auto)]
+    transport: NegotiationTransport,
+    /// Deadline for a transport-owned readiness exchange in milliseconds.
+    #[arg(long, default_value_t = DEFAULT_TRANSPORT_TIMEOUT_MS)]
+    transport_timeout_ms: u64,
+    /// Persist the negotiation receipt atomically instead of writing it to stdout.
+    #[arg(long)]
+    output: Option<PathBuf>,
+    /// Pretty-print the negotiation receipt JSON.
+    #[arg(long)]
+    pretty: bool,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum NegotiationTransport {
+    /// Use tmux passthrough only when a tmux environment marker is present.
+    Auto,
+    /// Write protocol bytes directly to the TTY.
+    Direct,
+    /// Wrap protocol bytes in tmux DCS passthrough framing.
+    TmuxPassthrough,
+}
+
 #[derive(Debug, Args)]
 struct KgpProbeArgs {
     /// Positive KGP image id used to correlate the reply.
@@ -174,7 +237,7 @@ struct SixelProbeArgs {
     common: TtyProbeArgs,
 }
 
-#[derive(Debug, Args)]
+#[derive(Clone, Debug, Args)]
 struct TtyProbeArgs {
     /// Response deadline in milliseconds.
     #[arg(long, default_value_t = DEFAULT_TIMEOUT_MS)]
@@ -243,6 +306,14 @@ enum AppError {
     ZeroTransportTimeout,
     #[error("max response bytes must be greater than zero")]
     ZeroResponseLimit,
+    #[error("contract document exceeds the {MAX_CONTRACT_DOCUMENT_BYTES}-byte validation limit")]
+    ContractLimit,
+    #[error("contract document has no string schema identity")]
+    ContractSchemaMissing,
+    #[error("unsupported contract schema: {0:?}")]
+    UnsupportedContractSchema(String),
+    #[error("contract validation failed: {0}")]
+    ContractInvalid(String),
 }
 
 struct RawModeGuard {
@@ -543,6 +614,118 @@ fn serialized_json<T: serde::Serialize>(value: &T, pretty: bool) -> Result<Vec<u
     Ok(bytes)
 }
 
+fn schema_document<T: JsonSchema>(id: &str, pretty: bool) -> Result<Vec<u8>, AppError> {
+    let mut value = serde_json::to_value(schema_for!(T))?;
+    let root = value.as_object_mut().ok_or_else(|| {
+        AppError::ContractInvalid("generated JSON Schema is not an object".into())
+    })?;
+    root.insert("$id".to_owned(), serde_json::Value::String(id.to_owned()));
+    if let Some(property) = root
+        .get_mut("properties")
+        .and_then(serde_json::Value::as_object_mut)
+        .and_then(|properties| properties.get_mut("schema"))
+    {
+        let description = property.get("description").cloned();
+        let mut exact = serde_json::Map::new();
+        if let Some(description) = description {
+            exact.insert("description".to_owned(), description);
+        }
+        exact.insert("const".to_owned(), serde_json::Value::String(id.to_owned()));
+        *property = serde_json::Value::Object(exact);
+    }
+    serialized_json(&value, pretty)
+}
+
+fn emit_schema_document(document: SchemaDocument, pretty: bool) -> Result<(), AppError> {
+    let bytes =
+        match document {
+            SchemaDocument::Receipt => {
+                schema_document::<ProbeReceiptV1>(PROBE_RECEIPT_SCHEMA_V1, pretty)?
+            },
+            SchemaDocument::ArtifactRef => schema_document::<terminal_interop_ref::ArtifactRefV1>(
+                terminal_interop_ref::ARTIFACT_REF_SCHEMA_V1,
+                pretty,
+            )?,
+            SchemaDocument::Negotiation => schema_document::<CapabilityNegotiationV1>(
+                CAPABILITY_NEGOTIATION_SCHEMA_V1,
+                pretty,
+            )?,
+            SchemaDocument::OpenIntent => {
+                schema_document::<OpenIntentV1>(OPEN_INTENT_SCHEMA_V1, pretty)?
+            },
+            SchemaDocument::IntentReceipt => schema_document::<
+                terminal_interop_intent::IntentReceiptV1,
+            >(INTENT_RECEIPT_SCHEMA_V1, pretty)?,
+            SchemaDocument::IntentReady => {
+                schema_document::<IntentReadyV1>(INTENT_READY_SCHEMA_V1, pretty)?
+            },
+        };
+    write_output(None, &bytes)
+}
+
+fn read_contract_document(path: &Path) -> Result<Vec<u8>, AppError> {
+    let mut bytes = Vec::new();
+    if path == Path::new("-") {
+        std::io::stdin()
+            .lock()
+            .take(MAX_CONTRACT_DOCUMENT_BYTES.saturating_add(1))
+            .read_to_end(&mut bytes)?;
+    } else {
+        File::open(path)?
+            .take(MAX_CONTRACT_DOCUMENT_BYTES.saturating_add(1))
+            .read_to_end(&mut bytes)?;
+    }
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_CONTRACT_DOCUMENT_BYTES {
+        return Err(AppError::ContractLimit);
+    }
+    Ok(bytes)
+}
+
+fn validate_contract(args: &ValidateArgs) -> Result<(), AppError> {
+    let bytes = read_contract_document(&args.input)?;
+    let envelope: serde_json::Value = serde_json::from_slice(&bytes)?;
+    let schema = envelope
+        .get("schema")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(AppError::ContractSchemaMissing)?
+        .to_owned();
+
+    match schema.as_str() {
+        PROBE_RECEIPT_SCHEMA_V1 => {
+            let receipt: ProbeReceiptV1 = serde_json::from_slice(&bytes)?;
+            receipt.validate().map_err(|error| AppError::ContractInvalid(error.to_string()))?;
+        },
+        CAPABILITY_NEGOTIATION_SCHEMA_V1 => {
+            let negotiation: CapabilityNegotiationV1 = serde_json::from_slice(&bytes)?;
+            negotiation.validate().map_err(|error| AppError::ContractInvalid(error.to_string()))?;
+        },
+        terminal_interop_ref::ARTIFACT_REF_SCHEMA_V1 => {
+            let reference: terminal_interop_ref::ArtifactRefV1 = serde_json::from_slice(&bytes)?;
+            reference.validate().map_err(|error| AppError::ContractInvalid(error.to_string()))?;
+        },
+        OPEN_INTENT_SCHEMA_V1 => {
+            let intent: OpenIntentV1 = serde_json::from_slice(&bytes)?;
+            intent
+                .validate_portable()
+                .map_err(|error| AppError::ContractInvalid(error.to_string()))?;
+        },
+        INTENT_RECEIPT_SCHEMA_V1 => {
+            let receipt: terminal_interop_intent::IntentReceiptV1 = serde_json::from_slice(&bytes)?;
+            receipt.validate().map_err(|error| AppError::ContractInvalid(error.to_string()))?;
+        },
+        INTENT_READY_SCHEMA_V1 => {
+            let ready: IntentReadyV1 = serde_json::from_slice(&bytes)?;
+            ready.validate().map_err(|error| AppError::ContractInvalid(error.to_string()))?;
+        },
+        _ => return Err(AppError::UnsupportedContractSchema(schema)),
+    }
+
+    if !args.quiet {
+        write_output(None, format!("valid\t{schema}\n").as_bytes())?;
+    }
+    Ok(())
+}
+
 fn write_output(path: Option<&Path>, bytes: &[u8]) -> Result<(), AppError> {
     let Some(path) = path else {
         let mut stdout = std::io::stdout().lock();
@@ -568,6 +751,41 @@ fn write_output(path: Option<&Path>, bytes: &[u8]) -> Result<(), AppError> {
 
 fn emit_probe_receipt(receipt: &ProbeReceiptV1, args: &TtyProbeArgs) -> Result<(), AppError> {
     let bytes = serialized_json(receipt, args.pretty)?;
+    write_output(args.output.as_deref(), &bytes)
+}
+
+const fn resolved_negotiation_transport(
+    requested: NegotiationTransport,
+    tmux_present: bool,
+) -> TransportKind {
+    match requested {
+        NegotiationTransport::Auto if tmux_present => TransportKind::TmuxPassthrough,
+        NegotiationTransport::Auto | NegotiationTransport::Direct => TransportKind::Direct,
+        NegotiationTransport::TmuxPassthrough => TransportKind::TmuxPassthrough,
+    }
+}
+
+fn negotiation_probe_args(args: &PixelNegotiationArgs) -> TtyProbeArgs {
+    TtyProbeArgs {
+        timeout_ms: args.timeout_ms,
+        max_response_bytes: args.max_response_bytes,
+        tty: args.tty.clone(),
+        transport: resolved_negotiation_transport(args.transport, env::var_os("TMUX").is_some()),
+        transport_timeout_ms: args.transport_timeout_ms,
+        output: None,
+        pretty: false,
+    }
+}
+
+fn negotiate_pixel(args: &PixelNegotiationArgs) -> Result<(), AppError> {
+    let common = negotiation_probe_args(args);
+    let kgp = kgp_receipt(&KgpProbeArgs {
+        correlation_id: std::process::id().max(1),
+        common: common.clone(),
+    })?;
+    let sixel = sixel_receipt(&SixelProbeArgs { common })?;
+    let negotiation = negotiate_capabilities_v1(vec![kgp, sixel]);
+    let bytes = serialized_json(&negotiation, args.pretty)?;
     write_output(args.output.as_deref(), &bytes)
 }
 
@@ -628,12 +846,7 @@ fn dispatch_callback(uri: &str, timeout_ms: u64, quiet: bool) -> Result<(), AppE
     let intent = OpenIntentV1::parse_uri(uri)?;
     let receipt =
         dispatch_intent(&intent_runtime_root()?, &intent, Duration::from_millis(timeout_ms))?;
-    if receipt.schema != INTENT_RECEIPT_SCHEMA_V1 {
-        return Err(AppError::IntentRejected(format!(
-            "unsupported receipt schema {}",
-            receipt.schema
-        )));
-    }
+    receipt.validate()?;
     if receipt.state != IntentDeliveryState::Forwarded {
         return Err(AppError::IntentRejected(receipt.detail));
     }
@@ -665,26 +878,9 @@ fn run(cli: Cli) -> Result<(), AppError> {
             let receipt = sixel_receipt(&args)?;
             emit_probe_receipt(&receipt, &args.common)
         },
-        Command::Schema { document: SchemaDocument::Receipt, pretty } => {
-            let schema = schema_for!(ProbeReceiptV1);
-            let bytes = serialized_json(&schema, pretty)?;
-            write_output(None, &bytes)
-        },
-        Command::Schema { document: SchemaDocument::OpenIntent, pretty } => {
-            let schema = schema_for!(OpenIntentV1);
-            let bytes = serialized_json(&schema, pretty)?;
-            write_output(None, &bytes)
-        },
-        Command::Schema { document: SchemaDocument::IntentReceipt, pretty } => {
-            let schema = schema_for!(terminal_interop_intent::IntentReceiptV1);
-            let bytes = serialized_json(&schema, pretty)?;
-            write_output(None, &bytes)
-        },
-        Command::Schema { document: SchemaDocument::IntentReady, pretty } => {
-            let schema = schema_for!(IntentReadyV1);
-            let bytes = serialized_json(&schema, pretty)?;
-            write_output(None, &bytes)
-        },
+        Command::Negotiate { profile: NegotiationProfile::Pixel(args) } => negotiate_pixel(&args),
+        Command::Schema { document, pretty } => emit_schema_document(document, pretty),
+        Command::Validate(args) => validate_contract(&args),
     }
 }
 
@@ -710,5 +906,17 @@ mod tests {
                 assert_eq!(hint.observation, HintObservation::Present);
             }
         }
+    }
+
+    #[test]
+    fn automatic_negotiation_transport_is_only_a_bounded_attempt_policy() {
+        assert!(matches!(
+            resolved_negotiation_transport(NegotiationTransport::Auto, false),
+            TransportKind::Direct
+        ));
+        assert!(matches!(
+            resolved_negotiation_transport(NegotiationTransport::Auto, true),
+            TransportKind::TmuxPassthrough
+        ));
     }
 }

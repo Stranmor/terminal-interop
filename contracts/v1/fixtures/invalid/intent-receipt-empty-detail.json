@@ -1,0 +1,6 @@
+{
+  "schema": "urn:terminal-interop:intent-receipt:v1",
+  "endpoint": "0123456789abcdef0123456789abcdef",
+  "state": "forwarded",
+  "detail": ""
+}

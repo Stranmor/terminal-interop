@@ -1,0 +1,37 @@
+{
+  "schema": "urn:terminal-interop:probe-receipt:v1",
+  "observed_at_unix_ms": 0,
+  "capability": {
+    "protocol": {
+      "namespace": "org.example",
+      "name": "fixture-protocol",
+      "revision": "v1"
+    },
+    "name": "fixture-capability"
+  },
+  "adapter": { "name": "fixture-adapter", "version": "1.0.0" },
+  "correlation": null,
+  "context": {
+    "tty_endpoint": "/dev/tty",
+    "transport": {
+      "adapter": { "name": "direct-tty", "version": "1.0.0" },
+      "readiness": "not_required",
+      "preparation_exchanges": []
+    },
+    "environment_hints": [],
+    "topology": { "state": "unknown" }
+  },
+  "exchange": {
+    "logical_request_base64": "",
+    "wire_request_base64": "",
+    "response_base64": "",
+    "events": [],
+    "elapsed_ms": 750,
+    "stop_reason": "timeout"
+  },
+  "assessment": {
+    "availability": "unknown",
+    "conformance": "inconclusive",
+    "assertions": []
+  }
+}

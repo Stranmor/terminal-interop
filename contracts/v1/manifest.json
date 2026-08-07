@@ -1,0 +1,44 @@
+{
+  "format": 1,
+  "schemas": [
+    {
+      "id": "urn:terminal-interop:probe-receipt:v1",
+      "path": "schemas/probe-receipt.schema.json"
+    },
+    {
+      "id": "urn:terminal-interop:capability-negotiation:v1",
+      "path": "schemas/capability-negotiation.schema.json"
+    },
+    {
+      "id": "urn:terminal-interop:artifact-ref:v1",
+      "path": "schemas/artifact-ref.schema.json"
+    },
+    {
+      "id": "urn:terminal-interop:open-intent:v1",
+      "path": "schemas/open-intent.schema.json"
+    },
+    {
+      "id": "urn:terminal-interop:intent-receipt:v1",
+      "path": "schemas/intent-receipt.schema.json"
+    },
+    {
+      "id": "urn:terminal-interop:intent-ready:v1",
+      "path": "schemas/intent-ready.schema.json"
+    }
+  ],
+  "vectors": [
+    { "expected": "valid", "path": "fixtures/valid/probe-receipt-unknown.json" },
+    { "expected": "invalid", "path": "fixtures/invalid/probe-receipt-bad-base64.json" },
+    { "expected": "valid", "path": "fixtures/valid/negotiation-selected.json" },
+    { "expected": "invalid", "path": "fixtures/invalid/negotiation-forged-selection.json" },
+    { "expected": "valid", "path": "fixtures/valid/artifact-ref.json" },
+    { "expected": "invalid", "path": "fixtures/invalid/artifact-ref-bad-digest.json" },
+    { "expected": "valid", "path": "fixtures/valid/open-intent.json" },
+    { "expected": "valid", "path": "fixtures/valid/open-intent-windows.json" },
+    { "expected": "invalid", "path": "fixtures/invalid/open-intent-bad-endpoint.json" },
+    { "expected": "valid", "path": "fixtures/valid/intent-receipt.json" },
+    { "expected": "invalid", "path": "fixtures/invalid/intent-receipt-empty-detail.json" },
+    { "expected": "valid", "path": "fixtures/valid/intent-ready.json" },
+    { "expected": "invalid", "path": "fixtures/invalid/intent-ready-wrong-prefix.json" }
+  ]
+}

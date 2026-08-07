@@ -5,7 +5,8 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 install_prefix=${PREFIX:-${HOME:?HOME is required}/.local}
 bin_dir="$install_prefix/bin"
 release_root="$install_prefix/libexec/terminal-interop/releases"
-data_home=${XDG_DATA_HOME:-${HOME:?HOME is required}/.local/share}
+user_data_home=${XDG_DATA_HOME:-${HOME:?HOME is required}/.local/share}
+data_home=${XDG_DATA_HOME:-$install_prefix/share}
 applications_dir="$data_home/applications"
 intent_desktop_name="terminal-interop-intent.desktop"
 
@@ -69,7 +70,25 @@ trap - EXIT
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$applications_dir"
 fi
-if command -v xdg-mime >/dev/null 2>&1; then
+
+# A custom PREFIX is also used by package builds and release-smoke tests. Do not
+# rewrite the live user's default URI handler from such an isolated install.
+# Registration happens automatically only when the desktop entry is installed
+# into the active user's XDG data home; callers can explicitly opt in or out.
+register_handler=${TERM_INTEROP_REGISTER_HANDLER:-auto}
+if [[ "$register_handler" == auto ]]; then
+    if [[ "$data_home" == "$user_data_home" ]]; then
+        register_handler=1
+    else
+        register_handler=0
+    fi
+fi
+if [[ "$register_handler" != 0 && "$register_handler" != 1 ]]; then
+    printf 'TERM_INTEROP_REGISTER_HANDLER must be auto, 0, or 1\n' >&2
+    exit 1
+fi
+
+if [[ "$register_handler" == 1 ]] && command -v xdg-mime >/dev/null 2>&1; then
     xdg-mime default "$intent_desktop_name" x-scheme-handler/terminal-interop-intent
     actual_intent_handler=$(xdg-mime query default x-scheme-handler/terminal-interop-intent)
     if [[ "$actual_intent_handler" != "$intent_desktop_name" ]]; then
@@ -80,3 +99,9 @@ fi
 
 "$bin_dir/term-interop" --version
 printf 'installed term-interop -> %s\n' "$release_binary"
+printf 'installed intent handler -> %s\n' "$applications_dir/$intent_desktop_name"
+if [[ "$register_handler" == 1 ]]; then
+    printf 'activated intent handler -> %s\n' "$intent_desktop_name"
+else
+    printf 'intent handler activation skipped for non-user data prefix\n'
+fi

@@ -1,0 +1,62 @@
+{
+  "$defs": {
+    "EncodedPathV1": {
+      "additionalProperties": false,
+      "properties": {
+        "encoding": {
+          "$ref": "#/$defs/PathEncoding"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoding",
+        "value"
+      ],
+      "type": "object"
+    },
+    "EndpointId": {
+      "pattern": "^[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "IntentAction": {
+      "enum": [
+        "open_artifact"
+      ],
+      "type": "string"
+    },
+    "PathEncoding": {
+      "enum": [
+        "unix_bytes_base64url_v1",
+        "utf8_base64url_v1"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "urn:terminal-interop:open-intent:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "$ref": "#/$defs/IntentAction"
+    },
+    "endpoint": {
+      "$ref": "#/$defs/EndpointId"
+    },
+    "schema": {
+      "const": "urn:terminal-interop:open-intent:v1"
+    },
+    "target": {
+      "$ref": "#/$defs/EncodedPathV1"
+    }
+  },
+  "required": [
+    "schema",
+    "endpoint",
+    "action",
+    "target"
+  ],
+  "title": "OpenIntentV1",
+  "type": "object"
+}

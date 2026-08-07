@@ -4,12 +4,18 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-publish = false
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../README.md"
+description = "Kitty Graphics Protocol probe and rendering adapter"
 
 [dependencies]
 base64.workspace = true
-terminal-interop-core = { path = "../terminal-interop-core" }
-terminal-interop-da1 = { path = "../terminal-interop-da1" }
+terminal-interop-core = { version = "0.1.0", path = "../terminal-interop-core" }
+terminal-interop-da1 = { version = "0.1.0", path = "../terminal-interop-da1" }
 
 [lints]
 workspace = true

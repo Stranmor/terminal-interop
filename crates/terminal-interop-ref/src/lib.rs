@@ -2,6 +2,7 @@
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use std::env;
@@ -29,7 +30,7 @@ const TOKEN_ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const MAX_ENTRY_BYTES: u64 = 64 * 1024;
 
 /// File identity captured when an agent offers an artifact.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FileIdentity {
     /// Encoded file length.
@@ -45,12 +46,13 @@ pub struct FileIdentity {
 }
 
 /// Portable local registry entry. Paths are data, never shell source.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ArtifactRefV1 {
     /// Stable schema identifier.
     pub schema: String,
     /// Short opaque reference token.
+    #[schemars(regex(pattern = "^[0-9A-HJKMNP-TV-Z]{13}$"))]
     pub token: String,
     /// Encoding profile for `path_base64`.
     pub path_encoding: String,
@@ -60,6 +62,34 @@ pub struct ArtifactRefV1 {
     pub identity: FileIdentity,
     /// Registration time in milliseconds since the Unix epoch.
     pub registered_at_unix_ms: u64,
+}
+
+/// Portable structural failure in an artifact reference record.
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+pub enum ArtifactRefValidationError {
+    /// The record does not use the v1 schema identity.
+    #[error("unsupported artifact reference schema: {0:?}")]
+    UnsupportedSchema(String),
+    /// The token is not the canonical ambiguity-reduced Base32 representation.
+    #[error("artifact reference token is not canonical")]
+    InvalidToken,
+    /// The path encoding profile is not defined by v1.
+    #[error("unsupported artifact path encoding: {0:?}")]
+    UnsupportedPathEncoding(String),
+    /// The encoded path is malformed, empty, relative where detectable, or contains NUL.
+    #[error("artifact reference path is invalid")]
+    InvalidPath,
+    /// The content digest is not one standard-Base64 SHA-256 value.
+    #[error("artifact reference digest is not a SHA-256 value in standard Base64")]
+    InvalidDigest,
+    /// The declared source size exceeds the shared v1 preview profile.
+    #[error("artifact reference size {actual} exceeds the {limit}-byte v1 limit")]
+    ArtifactLimit {
+        /// Declared source size.
+        actual: u64,
+        /// Shared v1 input limit.
+        limit: usize,
+    },
 }
 
 impl ArtifactRefV1 {
@@ -73,6 +103,60 @@ impl ArtifactRefV1 {
     #[must_use]
     pub fn uri(&self) -> String {
         format!("{ARTIFACT_REF_URI_PREFIX}{}", self.token)
+    }
+
+    /// Validate the portable record without resolving or opening its local file.
+    ///
+    /// This establishes schema identity, canonical token syntax, path encoding structure, digest
+    /// shape, and the shared resource bound. [`Registry::resolve`] additionally proves that the
+    /// current local file still has the recorded identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when any portable v1 invariant is violated.
+    pub fn validate(&self) -> Result<(), ArtifactRefValidationError> {
+        if self.schema != ARTIFACT_REF_SCHEMA_V1 {
+            return Err(ArtifactRefValidationError::UnsupportedSchema(self.schema.clone()));
+        }
+        parse_token(&self.token).map_err(|_| ArtifactRefValidationError::InvalidToken)?;
+
+        let path = BASE64_STANDARD
+            .decode(&self.path_base64)
+            .map_err(|_| ArtifactRefValidationError::InvalidPath)?;
+        if path.is_empty() || path.contains(&0) {
+            return Err(ArtifactRefValidationError::InvalidPath);
+        }
+        match self.path_encoding.as_str() {
+            "unix-bytes-v1" => {
+                if path.first() != Some(&b'/') {
+                    return Err(ArtifactRefValidationError::InvalidPath);
+                }
+            },
+            "utf8-v1" => {
+                let value = std::str::from_utf8(&path)
+                    .map_err(|_| ArtifactRefValidationError::InvalidPath)?;
+                if !is_windows_absolute(value) {
+                    return Err(ArtifactRefValidationError::InvalidPath);
+                }
+            },
+            other => {
+                return Err(ArtifactRefValidationError::UnsupportedPathEncoding(other.to_owned()));
+            },
+        }
+
+        let digest = BASE64_STANDARD
+            .decode(&self.identity.content_sha256_base64)
+            .map_err(|_| ArtifactRefValidationError::InvalidDigest)?;
+        if digest.len() != 32 {
+            return Err(ArtifactRefValidationError::InvalidDigest);
+        }
+        if self.identity.size > u64::try_from(MAX_ARTIFACT_INPUT_BYTES_V1).unwrap_or(u64::MAX) {
+            return Err(ArtifactRefValidationError::ArtifactLimit {
+                actual: self.identity.size,
+                limit: MAX_ARTIFACT_INPUT_BYTES_V1,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -243,7 +327,13 @@ impl Registry {
             return Err(RegistryError::EntryLimit);
         }
         let entry: ArtifactRefV1 = serde_json::from_slice(&bytes)?;
-        if entry.schema != ARTIFACT_REF_SCHEMA_V1 || entry.token != token {
+        entry.validate().map_err(|error| match error {
+            ArtifactRefValidationError::UnsupportedPathEncoding(encoding) => {
+                RegistryError::UnsupportedPathEncoding(encoding)
+            },
+            _ => RegistryError::InvalidReference,
+        })?;
+        if entry.token != token {
             return Err(RegistryError::InvalidReference);
         }
         let path_bytes = BASE64_STANDARD
@@ -343,6 +433,20 @@ fn enforce_artifact_limit(actual: u64) -> Result<(), RegistryError> {
     Ok(())
 }
 
+fn is_windows_absolute(value: &str) -> bool {
+    match value.as_bytes() {
+        [drive, b':', separator, ..]
+            if drive.is_ascii_alphabetic() && matches!(separator, b'/' | b'\\') =>
+        {
+            true
+        },
+        [first, second, ..] if matches!(first, b'/' | b'\\') && matches!(second, b'/' | b'\\') => {
+            true
+        },
+        _ => false,
+    }
+}
+
 #[cfg(unix)]
 fn encode_path(path: &Path) -> (&'static str, Vec<u8>) {
     ("unix-bytes-v1", path.as_os_str().as_bytes().to_vec())
@@ -415,10 +519,31 @@ mod tests {
         fs::write(&artifact, "hello").expect("write artifact");
         let registry = Registry::new(directory.path().join("state"));
         let entry = registry.register(&artifact).expect("register");
+        entry.validate().expect("registered entry should be structurally valid");
         assert_eq!(entry.short_ref().len(), TOKEN_LENGTH + 1);
         assert_eq!(registry.resolve(&entry.short_ref()).expect("resolve"), artifact);
         assert_eq!(registry.resolve(&entry.uri()).expect("resolve URI"), artifact);
         assert_eq!(registry.resolve_latest().expect("resolve latest"), artifact);
+    }
+
+    #[test]
+    fn portable_validation_rejects_non_sha256_digest() {
+        let entry = ArtifactRefV1 {
+            schema: ARTIFACT_REF_SCHEMA_V1.to_owned(),
+            token: "0123456789ABC".to_owned(),
+            path_encoding: "unix-bytes-v1".to_owned(),
+            path_base64: BASE64_STANDARD.encode(b"/tmp/example.txt"),
+            identity: FileIdentity {
+                size: 0,
+                modified_unix_nanos: None,
+                device: None,
+                inode: None,
+                content_sha256_base64: BASE64_STANDARD.encode([0_u8; 31]),
+            },
+            registered_at_unix_ms: 0,
+        };
+
+        assert_eq!(entry.validate(), Err(ArtifactRefValidationError::InvalidDigest));
     }
 
     #[test]

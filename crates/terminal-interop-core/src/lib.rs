@@ -1,5 +1,8 @@
 //! Protocol-neutral contracts for terminal interoperability evidence.
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+
 /// Maximum encoded artifact size accepted by the version-one preview profile: 32 MiB.
 ///
 /// Registration and consumption share this bound so a short reference cannot authorize work
@@ -12,6 +15,8 @@ use std::collections::BTreeMap;
 
 /// Stable schema identity for [`ProbeReceiptV1`].
 pub const PROBE_RECEIPT_SCHEMA_V1: &str = "urn:terminal-interop:probe-receipt:v1";
+/// Stable schema identity for [`CapabilityNegotiationV1`].
+pub const CAPABILITY_NEGOTIATION_SCHEMA_V1: &str = "urn:terminal-interop:capability-negotiation:v1";
 
 /// A protocol or standards family independent of any implementation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -290,6 +295,368 @@ pub struct ProbeReceiptV1 {
     pub assessment: Assessment,
 }
 
+/// Structural failure in a serialized probe receipt independent of protocol policy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProbeReceiptValidationError {
+    /// The document does not use the v1 schema identity.
+    UnsupportedSchema(String),
+    /// One wire-evidence field is not canonical standard Base64.
+    InvalidBase64 {
+        /// Stable field path inside the receipt.
+        field: String,
+    },
+    /// Parsed wire events are not numbered in exact stream order.
+    NoncanonicalEventSequence {
+        /// Stable exchange path inside the receipt.
+        exchange: String,
+        /// Expected zero-based sequence number.
+        expected: u32,
+        /// Serialized sequence number.
+        actual: u32,
+    },
+}
+
+impl std::fmt::Display for ProbeReceiptValidationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedSchema(schema) => {
+                write!(formatter, "unsupported probe receipt schema: {schema:?}")
+            },
+            Self::InvalidBase64 { field } => {
+                write!(formatter, "probe receipt field {field} is not standard Base64")
+            },
+            Self::NoncanonicalEventSequence { exchange, expected, actual } => write!(
+                formatter,
+                "noncanonical event sequence in {exchange}: expected {expected}, received {actual}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ProbeReceiptValidationError {}
+
+fn validate_base64(field: String, value: &str) -> Result<(), ProbeReceiptValidationError> {
+    BASE64_STANDARD
+        .decode(value)
+        .map(|_| ())
+        .map_err(|_| ProbeReceiptValidationError::InvalidBase64 { field })
+}
+
+fn validate_exchange(
+    path: &str,
+    exchange: &WireExchange,
+) -> Result<(), ProbeReceiptValidationError> {
+    validate_base64(format!("{path}.logical_request_base64"), &exchange.logical_request_base64)?;
+    validate_base64(format!("{path}.wire_request_base64"), &exchange.wire_request_base64)?;
+    validate_base64(format!("{path}.response_base64"), &exchange.response_base64)?;
+    for (index, event) in exchange.events.iter().enumerate() {
+        let expected = u32::try_from(index).unwrap_or(u32::MAX);
+        if event.sequence != expected {
+            return Err(ProbeReceiptValidationError::NoncanonicalEventSequence {
+                exchange: path.to_owned(),
+                expected,
+                actual: event.sequence,
+            });
+        }
+        validate_base64(format!("{path}.events[{index}].raw_base64"), &event.raw_base64)?;
+    }
+    Ok(())
+}
+
+impl ProbeReceiptV1 {
+    /// Validate protocol-neutral structural invariants retained by the v1 receipt.
+    ///
+    /// Protocol-specific parsers remain responsible for proving that parsed events and
+    /// assessments follow from the exact wire bytes. This method validates only invariants that
+    /// every implementation can check without knowing the active protocol profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a foreign schema identity, malformed Base64 evidence, or reordered
+    /// event sequence numbers.
+    pub fn validate(&self) -> Result<(), ProbeReceiptValidationError> {
+        if self.schema != PROBE_RECEIPT_SCHEMA_V1 {
+            return Err(ProbeReceiptValidationError::UnsupportedSchema(self.schema.clone()));
+        }
+        for (index, exchange) in self.context.transport.preparation_exchanges.iter().enumerate() {
+            validate_exchange(
+                &format!("context.transport.preparation_exchanges[{index}]"),
+                exchange,
+            )?;
+        }
+        validate_exchange("exchange", &self.exchange)
+    }
+}
+
+/// Whether one observed candidate is safe to actuate under the v1 negotiation profile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateDisposition {
+    /// Availability, profile conformance, and transport readiness are all established.
+    Eligible,
+    /// At least one required claim is unavailable, negative, or unknown.
+    Ineligible,
+}
+
+/// One capability receipt in caller-defined preference order.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NegotiationCandidateV1 {
+    /// Zero-based preference rank supplied by the negotiating consumer.
+    pub preference: u64,
+    /// Derived eligibility; the complete evidence remains in `receipt`.
+    pub disposition: CandidateDisposition,
+    /// Exact live receipt from the candidate adapter.
+    pub receipt: ProbeReceiptV1,
+}
+
+/// Result of evaluating all supplied candidates without erasing negative or unknown evidence.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum NegotiationSelectionV1 {
+    /// The first eligible candidate in explicit preference order.
+    Selected {
+        /// Preference rank of the selected candidate.
+        preference: u64,
+        /// Selected protocol capability.
+        capability: CapabilityId,
+        /// Adapter that produced the selected evidence.
+        adapter: AdapterIdentity,
+    },
+    /// No supplied candidate had sufficient positive evidence.
+    NoEligibleCandidate,
+}
+
+/// Portable receipt for deterministic capability selection from ordered live evidence.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CapabilityNegotiationV1 {
+    /// Stable schema identifier.
+    schema: String,
+    /// Candidates in exact caller-defined preference order.
+    candidates: Vec<NegotiationCandidateV1>,
+    /// Selected candidate or an explicit evidence-backed absence.
+    selection: NegotiationSelectionV1,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityNegotiationWireV1 {
+    schema: String,
+    candidates: Vec<NegotiationCandidateV1>,
+    selection: NegotiationSelectionV1,
+}
+
+/// Semantic failure in a serialized capability negotiation receipt.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NegotiationValidationError {
+    /// The document does not use the v1 schema identity.
+    UnsupportedSchema(String),
+    /// A candidate preference does not match its exact vector position.
+    NoncanonicalPreference {
+        /// Expected zero-based preference.
+        expected: u64,
+        /// Serialized preference.
+        actual: u64,
+    },
+    /// Serialized disposition contradicts the embedded probe receipt.
+    DispositionMismatch {
+        /// Candidate preference whose disposition is invalid.
+        preference: u64,
+    },
+    /// Selection does not point to the first eligible candidate.
+    SelectionMismatch,
+    /// Selection duplicates a capability or adapter other than the selected candidate's identity.
+    SelectedIdentityMismatch {
+        /// Selected preference whose duplicated identity is invalid.
+        preference: u64,
+    },
+    /// An embedded candidate receipt violates protocol-neutral v1 structure.
+    InvalidReceipt {
+        /// Candidate preference whose receipt is invalid.
+        preference: u64,
+        /// Exact structural failure in the embedded receipt.
+        source: ProbeReceiptValidationError,
+    },
+}
+
+impl std::fmt::Display for NegotiationValidationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedSchema(schema) => {
+                write!(formatter, "unsupported capability negotiation schema: {schema:?}")
+            },
+            Self::NoncanonicalPreference { expected, actual } => write!(
+                formatter,
+                "noncanonical capability preference: expected {expected}, received {actual}"
+            ),
+            Self::DispositionMismatch { preference } => write!(
+                formatter,
+                "capability disposition contradicts receipt at preference {preference}"
+            ),
+            Self::SelectionMismatch => {
+                formatter.write_str("selection is not the first eligible capability")
+            },
+            Self::SelectedIdentityMismatch { preference } => write!(
+                formatter,
+                "selected capability identity does not match preference {preference}"
+            ),
+            Self::InvalidReceipt { preference, source } => {
+                write!(formatter, "invalid probe receipt at preference {preference}: {source}")
+            },
+        }
+    }
+}
+
+impl std::error::Error for NegotiationValidationError {}
+
+const fn preference_from_index(index: usize) -> u64 {
+    index as u64
+}
+
+impl<'de> Deserialize<'de> for CapabilityNegotiationV1 {
+    fn deserialize<Deserializer>(deserializer: Deserializer) -> Result<Self, Deserializer::Error>
+    where
+        Deserializer: serde::Deserializer<'de>,
+    {
+        let wire = CapabilityNegotiationWireV1::deserialize(deserializer)?;
+        let value =
+            Self { schema: wire.schema, candidates: wire.candidates, selection: wire.selection };
+        value.validate().map_err(serde::de::Error::custom)?;
+        Ok(value)
+    }
+}
+
+impl CapabilityNegotiationV1 {
+    /// Stable schema identity retained in this receipt.
+    #[must_use]
+    pub fn schema(&self) -> &str {
+        &self.schema
+    }
+
+    /// Ordered candidate evidence.
+    #[must_use]
+    pub fn candidates(&self) -> &[NegotiationCandidateV1] {
+        &self.candidates
+    }
+
+    /// Deterministic selection derived from the ordered candidates.
+    #[must_use]
+    pub const fn selection(&self) -> &NegotiationSelectionV1 {
+        &self.selection
+    }
+
+    /// Validate every derived field against the embedded evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns a semantic error when schema identity, preference order, disposition, or selection
+    /// contradicts the v1 contract.
+    pub fn validate(&self) -> Result<(), NegotiationValidationError> {
+        if self.schema != CAPABILITY_NEGOTIATION_SCHEMA_V1 {
+            return Err(NegotiationValidationError::UnsupportedSchema(self.schema.clone()));
+        }
+
+        let mut first_eligible = None;
+        for (index, candidate) in self.candidates.iter().enumerate() {
+            let expected = preference_from_index(index);
+            if candidate.preference != expected {
+                return Err(NegotiationValidationError::NoncanonicalPreference {
+                    expected,
+                    actual: candidate.preference,
+                });
+            }
+
+            candidate.receipt.validate().map_err(|source| {
+                NegotiationValidationError::InvalidReceipt {
+                    preference: candidate.preference,
+                    source,
+                }
+            })?;
+
+            let expected_disposition = if receipt_is_eligible(&candidate.receipt) {
+                CandidateDisposition::Eligible
+            } else {
+                CandidateDisposition::Ineligible
+            };
+            if candidate.disposition != expected_disposition {
+                return Err(NegotiationValidationError::DispositionMismatch {
+                    preference: candidate.preference,
+                });
+            }
+            if first_eligible.is_none()
+                && matches!(candidate.disposition, CandidateDisposition::Eligible)
+            {
+                first_eligible = Some(candidate);
+            }
+        }
+
+        match (&self.selection, first_eligible) {
+            (NegotiationSelectionV1::NoEligibleCandidate, None) => Ok(()),
+            (
+                NegotiationSelectionV1::Selected { preference, capability, adapter },
+                Some(candidate),
+            ) if *preference == candidate.preference => {
+                if capability != &candidate.receipt.capability
+                    || adapter != &candidate.receipt.adapter
+                {
+                    return Err(NegotiationValidationError::SelectedIdentityMismatch {
+                        preference: *preference,
+                    });
+                }
+                Ok(())
+            },
+            _ => Err(NegotiationValidationError::SelectionMismatch),
+        }
+    }
+}
+
+/// Return whether a probe receipt establishes every condition required for actuation.
+#[must_use]
+pub const fn receipt_is_eligible(receipt: &ProbeReceiptV1) -> bool {
+    matches!(receipt.assessment.availability, Availability::Available)
+        && matches!(receipt.assessment.conformance, Conformance::Conformant)
+        && matches!(
+            receipt.context.transport.readiness,
+            TransportReadiness::NotRequired | TransportReadiness::Ready
+        )
+}
+
+/// Select the first eligible capability while preserving every supplied receipt.
+///
+/// Input order is the complete preference policy. The function does not infer terminal identity,
+/// reorder candidates, or introduce a fallback that was not supplied by the caller.
+#[must_use]
+pub fn negotiate_capabilities_v1(receipts: Vec<ProbeReceiptV1>) -> CapabilityNegotiationV1 {
+    let mut selection = NegotiationSelectionV1::NoEligibleCandidate;
+    let candidates = receipts
+        .into_iter()
+        .enumerate()
+        .map(|(index, receipt)| {
+            let preference = preference_from_index(index);
+            let disposition = if receipt_is_eligible(&receipt) {
+                if matches!(selection, NegotiationSelectionV1::NoEligibleCandidate) {
+                    selection = NegotiationSelectionV1::Selected {
+                        preference,
+                        capability: receipt.capability.clone(),
+                        adapter: receipt.adapter.clone(),
+                    };
+                }
+                CandidateDisposition::Eligible
+            } else {
+                CandidateDisposition::Ineligible
+            };
+            NegotiationCandidateV1 { preference, disposition, receipt }
+        })
+        .collect();
+
+    CapabilityNegotiationV1 {
+        schema: CAPABILITY_NEGOTIATION_SCHEMA_V1.to_owned(),
+        candidates,
+        selection,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,5 +668,118 @@ mod tests {
         assert!(rendered.contains("TopologyObservation"));
         assert!(rendered.contains("unknown"));
         assert!(rendered.contains("declared"));
+    }
+
+    fn receipt(
+        name: &str,
+        availability: Availability,
+        conformance: Conformance,
+        readiness: TransportReadiness,
+    ) -> ProbeReceiptV1 {
+        let protocol = ProtocolId {
+            namespace: "org.example".to_owned(),
+            name: name.to_owned(),
+            revision: "v1".to_owned(),
+        };
+        let adapter = AdapterIdentity { name: format!("{name}-adapter"), version: "1".to_owned() };
+        ProbeReceiptV1 {
+            schema: PROBE_RECEIPT_SCHEMA_V1.to_owned(),
+            observed_at_unix_ms: 0,
+            capability: CapabilityId { protocol, name: "pixel-preview".to_owned() },
+            adapter: adapter.clone(),
+            correlation: None,
+            context: ProbeContext {
+                tty_endpoint: "/dev/tty".to_owned(),
+                transport: TransportEvidence {
+                    adapter,
+                    readiness,
+                    preparation_exchanges: Vec::new(),
+                },
+                environment_hints: Vec::new(),
+                topology: TopologyObservation::Unknown,
+            },
+            exchange: WireExchange {
+                logical_request_base64: String::new(),
+                wire_request_base64: String::new(),
+                response_base64: String::new(),
+                events: Vec::new(),
+                elapsed_ms: 0,
+                stop_reason: StopReason::Timeout,
+            },
+            assessment: Assessment { availability, conformance, assertions: Vec::new() },
+        }
+    }
+
+    #[test]
+    fn negotiation_selects_first_eligible_candidate_without_erasing_evidence() {
+        let first = receipt(
+            "first",
+            Availability::Unknown,
+            Conformance::Inconclusive,
+            TransportReadiness::Unknown,
+        );
+        let second = receipt(
+            "second",
+            Availability::Available,
+            Conformance::Conformant,
+            TransportReadiness::Ready,
+        );
+        let third = receipt(
+            "third",
+            Availability::Available,
+            Conformance::Conformant,
+            TransportReadiness::NotRequired,
+        );
+
+        let result = negotiate_capabilities_v1(vec![first, second, third]);
+
+        assert_eq!(result.candidates.len(), 3);
+        let dispositions: Vec<_> =
+            result.candidates.iter().map(|candidate| candidate.disposition).collect();
+        assert_eq!(
+            dispositions,
+            vec![
+                CandidateDisposition::Ineligible,
+                CandidateDisposition::Eligible,
+                CandidateDisposition::Eligible,
+            ]
+        );
+        assert!(matches!(result.selection, NegotiationSelectionV1::Selected { preference: 1, .. }));
+    }
+
+    #[test]
+    fn negotiation_schema_preserves_explicit_no_candidate_state() {
+        let schema = schemars::schema_for!(CapabilityNegotiationV1);
+        let rendered = serde_json::to_string(&schema).expect("schema should serialize");
+        assert!(rendered.contains("no_eligible_candidate"));
+        assert!(rendered.contains("ineligible"));
+    }
+
+    #[test]
+    fn negotiation_deserialization_rejects_forged_derived_state() {
+        let first = receipt(
+            "first",
+            Availability::Unknown,
+            Conformance::Inconclusive,
+            TransportReadiness::Unknown,
+        );
+        let second = receipt(
+            "second",
+            Availability::Available,
+            Conformance::Conformant,
+            TransportReadiness::Ready,
+        );
+        let negotiation = negotiate_capabilities_v1(vec![first, second]);
+        let mut forged = serde_json::to_value(&negotiation).expect("negotiation should serialize");
+        let preference = forged.pointer_mut("/selection/preference");
+        assert!(preference.is_some());
+        if let Some(preference) = preference {
+            *preference = serde_json::json!(0);
+        }
+
+        let error = serde_json::from_value::<CapabilityNegotiationV1>(forged)
+            .expect_err("forged selection must fail closed");
+
+        assert!(error.to_string().contains("first eligible"));
     }
 }

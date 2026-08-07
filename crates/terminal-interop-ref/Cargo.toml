@@ -4,16 +4,23 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-publish = false
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../README.md"
+description = "Opaque identity-bound references for local terminal artifacts"
 
 [dependencies]
 base64.workspace = true
 getrandom.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
-terminal-interop-core = { path = "../terminal-interop-core" }
+terminal-interop-core = { version = "0.1.0", path = "../terminal-interop-core" }
 thiserror.workspace = true
 
 [lints]

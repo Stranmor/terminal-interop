@@ -28,9 +28,19 @@ const MAX_TARGET_BYTES: usize = 16 * 1024;
 const MAX_FRAME_BYTES: usize = 64 * 1024;
 const SOCKET_PATH_SOFT_LIMIT: usize = 100;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(transparent)]
-pub struct EndpointId(String);
+pub struct EndpointId(#[schemars(regex(pattern = "^[0-9a-f]{32}$"))] String);
+
+impl<'de> Deserialize<'de> for EndpointId {
+    fn deserialize<Deserializer>(deserializer: Deserializer) -> Result<Self, Deserializer::Error>
+    where
+        Deserializer: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(&value).map_err(serde::de::Error::custom)
+    }
+}
 
 impl EndpointId {
     /// Generate an unguessable 128-bit local endpoint identity.
@@ -124,6 +134,28 @@ impl OpenIntentV1 {
     ///
     /// Returns an error for unsupported schemas or encodings and invalid or relative paths.
     pub fn path(&self) -> Result<PathBuf, IntentError> {
+        let bytes = self.portable_path_bytes()?;
+        let path = path_from_bytes(self.target.encoding, bytes)?;
+        if !path.is_absolute() {
+            return Err(IntentError::TargetNotAbsolute);
+        }
+        Ok(path)
+    }
+
+    /// Validate the contract without requiring support for its path encoding on this host.
+    ///
+    /// This is the correct boundary for schema tooling and cross-platform relays. [`Self::path`]
+    /// additionally requires that the current platform can construct and actuate the path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a foreign schema, malformed encoding, resource-bound violation, or a
+    /// path that is not absolute under its declared profile.
+    pub fn validate_portable(&self) -> Result<(), IntentError> {
+        self.portable_path_bytes().map(drop)
+    }
+
+    fn portable_path_bytes(&self) -> Result<Vec<u8>, IntentError> {
         if self.schema != OPEN_INTENT_SCHEMA_V1 {
             return Err(IntentError::UnsupportedSchema(self.schema.clone()));
         }
@@ -131,11 +163,20 @@ impl OpenIntentV1 {
             .decode(&self.target.value)
             .map_err(|_| IntentError::InvalidTargetEncoding)?;
         validate_target_bytes(&bytes)?;
-        let path = path_from_bytes(self.target.encoding, bytes)?;
-        if !path.is_absolute() {
-            return Err(IntentError::TargetNotAbsolute);
+        match self.target.encoding {
+            PathEncoding::UnixBytesBase64urlV1 if bytes.first() != Some(&b'/') => {
+                return Err(IntentError::TargetNotAbsolute);
+            },
+            PathEncoding::Utf8Base64urlV1 => {
+                let value =
+                    std::str::from_utf8(&bytes).map_err(|_| IntentError::InvalidTargetEncoding)?;
+                if !is_windows_absolute(value) {
+                    return Err(IntentError::TargetNotAbsolute);
+                }
+            },
+            PathEncoding::UnixBytesBase64urlV1 => {},
         }
-        Ok(path)
+        Ok(bytes)
     }
 
     /// Encode this intent as its canonical callback URI.
@@ -221,6 +262,21 @@ impl IntentReceiptV1 {
             detail: detail.into(),
         }
     }
+
+    /// Validate a receipt received outside the bounded local transport.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a foreign schema or a missing/oversized detail.
+    pub fn validate(&self) -> Result<(), IntentError> {
+        if self.schema != INTENT_RECEIPT_SCHEMA_V1 {
+            return Err(IntentError::UnsupportedSchema(self.schema.clone()));
+        }
+        if self.detail.is_empty() || self.detail.len() > MAX_FRAME_BYTES {
+            return Err(IntentError::InvalidReceiptDetail);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -239,6 +295,22 @@ impl IntentReadyV1 {
             uri_prefix: format!("{INTENT_URI_PREFIX_V1}{}/", endpoint.as_str()),
             endpoint,
         }
+    }
+
+    /// Validate that a ready record is bound to its exact endpoint URI prefix.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a foreign schema or a mismatched derived prefix.
+    pub fn validate(&self) -> Result<(), IntentError> {
+        if self.schema != INTENT_READY_SCHEMA_V1 {
+            return Err(IntentError::UnsupportedSchema(self.schema.clone()));
+        }
+        let expected = format!("{INTENT_URI_PREFIX_V1}{}/", self.endpoint.as_str());
+        if self.uri_prefix != expected {
+            return Err(IntentError::InvalidReadyPrefix);
+        }
+        Ok(())
     }
 }
 
@@ -260,8 +332,12 @@ pub enum IntentError {
     TargetNotAbsolute,
     #[error("path encoding is unsupported on this platform")]
     UnsupportedPathEncoding,
-    #[error("unsupported intent schema: {0}")]
+    #[error("unsupported intent schema: {0:?}")]
     UnsupportedSchema(String),
+    #[error("intent receipt detail is empty or exceeds the bounded frame profile")]
+    InvalidReceiptDetail,
+    #[error("intent ready URI prefix does not match its endpoint")]
+    InvalidReadyPrefix,
     #[error("XDG_RUNTIME_DIR is missing or is not absolute")]
     RuntimeDirectoryUnavailable,
     #[error("intent runtime directory is not private: {0}")]
@@ -287,6 +363,20 @@ fn validate_target_bytes(bytes: &[u8]) -> Result<(), IntentError> {
         return Err(IntentError::InvalidTargetBytes);
     }
     Ok(())
+}
+
+fn is_windows_absolute(value: &str) -> bool {
+    match value.as_bytes() {
+        [drive, b':', separator, ..]
+            if drive.is_ascii_alphabetic() && matches!(separator, b'/' | b'\\') =>
+        {
+            true
+        },
+        [first, second, ..] if matches!(first, b'/' | b'\\') && matches!(second, b'/' | b'\\') => {
+            true
+        },
+        _ => false,
+    }
 }
 
 #[cfg(unix)]
@@ -450,6 +540,7 @@ pub fn dispatch(
     stream.set_write_timeout(Some(timeout))?;
     write_frame(&mut stream, intent)?;
     let receipt: IntentReceiptV1 = read_frame(&mut stream)?;
+    receipt.validate()?;
     if receipt.endpoint != intent.endpoint {
         return Err(IntentError::EndpointMismatch);
     }
@@ -527,6 +618,41 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn endpoint_deserialization_rejects_noncanonical_values() {
+        let error = serde_json::from_str::<EndpointId>("\"ABCDEF0123456789ABCDEF0123456789\"")
+            .expect_err("uppercase endpoint must fail closed");
+        assert!(error.to_string().contains("lowercase hexadecimal"));
+    }
+
+    #[test]
+    fn ready_validation_rejects_mismatched_derived_prefix() {
+        let endpoint = EndpointId::parse("0123456789abcdef0123456789abcdef")
+            .expect("fixture endpoint should be valid");
+        let mut ready = IntentReadyV1::new(endpoint);
+        ready.uri_prefix.push_str("wrong/");
+        assert!(matches!(ready.validate(), Err(IntentError::InvalidReadyPrefix)));
+    }
+
+    #[test]
+    fn portable_validation_accepts_windows_intent_without_local_actuation_support() {
+        let intent: OpenIntentV1 = serde_json::from_value(serde_json::json!({
+            "schema": OPEN_INTENT_SCHEMA_V1,
+            "endpoint": "0123456789abcdef0123456789abcdef",
+            "action": "open_artifact",
+            "target": {
+                "encoding": "utf8_base64url_v1",
+                "value": "QzpcVXNlcnNcZXhhbXBsZVxyZXBvcnQudHh0"
+            }
+        }))
+        .expect("portable Windows fixture should deserialize");
+
+        assert!(intent.validate_portable().is_ok());
+        if cfg!(unix) {
+            assert!(matches!(intent.path(), Err(IntentError::UnsupportedPathEncoding)));
+        }
     }
 
     #[cfg(unix)]

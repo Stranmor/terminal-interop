@@ -1,0 +1,9 @@
+{
+  "schema": "urn:terminal-interop:open-intent:v1",
+  "endpoint": "0123456789abcdef0123456789abcdef",
+  "action": "open_artifact",
+  "target": {
+    "encoding": "utf8_base64url_v1",
+    "value": "QzpcVXNlcnNcZXhhbXBsZVxyZXBvcnQudHh0"
+  }
+}

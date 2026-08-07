@@ -1,5 +1,5 @@
 layout {
-    pane close_on_exit=true {
+    pane name="Terminal Interop" close_on_exit=true {
         command "bash"
         args "-lc" "exec \"$TERM_INTEROP_RUNNER\""
     }

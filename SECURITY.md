@@ -32,3 +32,9 @@ preview decoding. Raster dimensions and decoded allocation have independent boun
 Protocol parsers accept untrusted bytes and produce typed observations only.
 Actuators consume validated requests with explicit resource limits. Environment
 hints never establish capability support or authorize an action.
+
+`term-interop validate` proves document structure and protocol-neutral cross-field invariants. A
+probe receipt is evidence, not a signed attestation: validation does not prove who ran the adapter
+or that its protocol-specific assessment honestly follows from the retained wire bytes. A product
+must trust the sensor that produced a receipt, rerun an eligible local adapter, or add its own
+authenticated provenance before using receipts across a trust boundary.

@@ -4,11 +4,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-publish = false
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../README.md"
+description = "Typed parser for terminal primary device attributes responses"
 
 [dependencies]
 base64.workspace = true
-terminal-interop-core = { path = "../terminal-interop-core" }
+terminal-interop-core = { version = "0.1.0", path = "../terminal-interop-core" }
 
 [lints]
 workspace = true

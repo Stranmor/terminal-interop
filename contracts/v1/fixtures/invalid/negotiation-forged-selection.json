@@ -1,0 +1,43 @@
+{
+  "schema": "urn:terminal-interop:capability-negotiation:v1",
+  "candidates": [
+    {
+      "preference": 0,
+      "disposition": "eligible",
+      "receipt": {
+        "schema": "urn:terminal-interop:probe-receipt:v1",
+        "observed_at_unix_ms": 0,
+        "capability": {
+          "protocol": { "namespace": "org.example", "name": "fixture", "revision": "v1" },
+          "name": "raster-image-display"
+        },
+        "adapter": { "name": "fixture-adapter", "version": "1.0.0" },
+        "correlation": null,
+        "context": {
+          "tty_endpoint": "/dev/tty",
+          "transport": {
+            "adapter": { "name": "direct-tty", "version": "1.0.0" },
+            "readiness": "not_required",
+            "preparation_exchanges": []
+          },
+          "environment_hints": [],
+          "topology": { "state": "unknown" }
+        },
+        "exchange": {
+          "logical_request_base64": "",
+          "wire_request_base64": "",
+          "response_base64": "",
+          "events": [],
+          "elapsed_ms": 0,
+          "stop_reason": "end_of_input"
+        },
+        "assessment": {
+          "availability": "available",
+          "conformance": "conformant",
+          "assertions": []
+        }
+      }
+    }
+  ],
+  "selection": { "state": "no_eligible_candidate" }
+}

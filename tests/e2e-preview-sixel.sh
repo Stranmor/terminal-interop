@@ -2,6 +2,7 @@
 set -euo pipefail
 
 : "${TERM_INTEROP_ALACRITTY_BIN:?set TERM_INTEROP_ALACRITTY_BIN to the exact Alacritty candidate}"
+e2e_backend=${TERM_INTEROP_E2E_BACKEND:-sixel}
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 project_dir=$(CDPATH='' cd -- "$script_dir/.." && pwd)
@@ -38,11 +39,24 @@ if [[ -n "${TERM_INTEROP_E2E_FIXTURE:-}" ]]; then
         exit 1
     fi
 else
-    magick -size 960x640 gradient:'#10162c-#f0b35a' \
-        -stroke '#55d6ff' -strokewidth 2 -fill none \
-        -draw 'rectangle 40,40 920,600 line 40,320 920,320 line 480,40 480,600' \
-        -fill '#f8fafc' -stroke none -pointsize 42 -gravity center \
-        -annotate +0+0 'SIXEL 1px FRAMEBUFFER DETAIL' \
+    magick -size 1200x800 gradient:'#071426-#183f61' \
+        -fill '#081221' -stroke '#38bdf8' -strokewidth 1 \
+        -draw 'roundrectangle 50,50 1150,750 22,22' \
+        -fill none -stroke '#1e4f70' -strokewidth 1 \
+        -draw 'line 90,285 1110,285 line 90,540 1110,540 line 390,285 390,540 line 690,285 690,540 line 990,285 990,540' \
+        -fill '#f8fafc' -stroke none -font DejaVu-Sans -pointsize 66 -gravity northwest \
+        -annotate +90+92 'TERMINAL INTEROP' \
+        -fill '#7dd3fc' -pointsize 25 -annotate +94+188 'LIVE PIXELS  /  SAME TTY  /  VERIFIED' \
+        -fill '#f43f5e' -draw 'rectangle 90,330 240,500' \
+        -fill '#f59e0b' -draw 'rectangle 240,330 390,500' \
+        -fill '#22c55e' -draw 'rectangle 390,330 540,500' \
+        -fill '#06b6d4' -draw 'rectangle 540,330 690,500' \
+        -fill '#3b82f6' -draw 'rectangle 690,330 840,500' \
+        -fill '#a855f7' -draw 'rectangle 840,330 990,500' \
+        -fill '#e2e8f0' -stroke none -pointsize 30 -annotate +90+590 'KGP  /  SIXEL  /  SSH  /  MULTIPLEXERS' \
+        -fill '#94a3b8' -pointsize 21 -annotate +92+650 '1 px geometry  |  bounded decode  |  explicit restore' \
+        -fill none -stroke '#f8fafc' -strokewidth 1 \
+        -draw 'rectangle 90,330 990,500 line 90,415 990,415 line 165,330 165,500 line 315,330 315,500 line 465,330 465,500 line 615,330 615,500 line 765,330 765,500 line 915,330 915,500' \
         "$fixture"
 fi
 fixture_geometry=$(identify -format '%w %h' "$fixture")
@@ -118,7 +132,7 @@ run_case() {
             TERM_INTEROP_STARTED="$started" \
             TERM_INTEROP_START_FIFO="$start_fifo" \
             TERM_INTEROP_DURATION_MS=3000 \
-            TERM_INTEROP_BACKEND=sixel \
+            TERM_INTEROP_BACKEND="$e2e_backend" \
             "$alacritty_bin" --config-file /dev/null \
                 -o window.dimensions.columns="$outer_columns" \
                 -o window.dimensions.lines="$outer_rows" \
@@ -134,7 +148,7 @@ run_case() {
             TERM_INTEROP_STARTED="$started" \
             TERM_INTEROP_START_FIFO="$start_fifo" \
             TERM_INTEROP_DURATION_MS=3000 \
-            TERM_INTEROP_BACKEND=sixel \
+            TERM_INTEROP_BACKEND="$e2e_backend" \
             TERM_INTEROP_RUNNER="$runner" \
             zellij --config "$zellij_config" attach --create-background "$active_session" options \
                 --default-layout "$zellij_layout" \
@@ -251,7 +265,10 @@ run_case() {
         printf '%s live Sixel preview retained only %s colors\n' "$case_name" "$live_colors" >&2
         exit 1
     fi
-    if [[ -z "$live_rmse" ]] || ! awk -v value="$live_rmse" 'BEGIN { exit !(value < 0.16) }'; then
+    # The Zellij path can shift a cell-bounded raster by one or two physical pixels while retaining
+    # the complete image. Keep a strict raw bound for palette/geometry loss and use the independent
+    # blurred metric below to reject perceptual degradation.
+    if [[ -z "$live_rmse" ]] || ! awk -v value="$live_rmse" 'BEGIN { exit !(value < 0.18) }'; then
         printf '%s framebuffer palette or geometry diverges from the fixture: RMSE=%s\n' \
             "$case_name" "${live_rmse:-unknown}" >&2
         exit 1

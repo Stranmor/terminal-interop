@@ -4,10 +4,16 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-publish = false
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../README.md"
+description = "tmux passthrough transport adapter for terminal protocols"
 
 [dependencies]
-terminal-interop-core = { path = "../terminal-interop-core" }
+terminal-interop-core = { version = "0.1.0", path = "../terminal-interop-core" }
 
 [lints]
 workspace = true

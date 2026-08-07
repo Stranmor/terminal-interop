@@ -1,0 +1,719 @@
+{
+  "$defs": {
+    "AdapterIdentity": {
+      "additionalProperties": false,
+      "description": "Identity of the adapter that produced the wire exchange.",
+      "properties": {
+        "name": {
+          "description": "Adapter implementation name.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Adapter implementation version.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "AssertionOutcome": {
+      "description": "Result of one stable conformance assertion.",
+      "oneOf": [
+        {
+          "const": "pass",
+          "description": "The evidence satisfies the assertion.",
+          "type": "string"
+        },
+        {
+          "const": "fail",
+          "description": "The evidence contradicts the assertion.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "The evidence cannot decide the assertion.",
+          "type": "string"
+        },
+        {
+          "const": "not_applicable",
+          "description": "The assertion does not apply to this capability state.",
+          "type": "string"
+        }
+      ]
+    },
+    "AssertionResult": {
+      "additionalProperties": false,
+      "description": "One independently consumable assertion result.",
+      "properties": {
+        "detail": {
+          "description": "Concise evidence-bound explanation.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable profile-scoped assertion identifier.",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AssertionOutcome",
+          "description": "Typed result rather than a boolean that would erase uncertainty."
+        }
+      },
+      "required": [
+        "id",
+        "outcome",
+        "detail"
+      ],
+      "type": "object"
+    },
+    "Assessment": {
+      "additionalProperties": false,
+      "description": "Interpretation kept separate from the wire exchange that supports it.",
+      "properties": {
+        "assertions": {
+          "description": "Stable, independently inspectable assertion results.",
+          "items": {
+            "$ref": "#/$defs/AssertionResult"
+          },
+          "type": "array"
+        },
+        "availability": {
+          "$ref": "#/$defs/Availability",
+          "description": "Whether the capability was observed as available."
+        },
+        "conformance": {
+          "$ref": "#/$defs/Conformance",
+          "description": "Whether the exchange conformed to the active profile."
+        }
+      },
+      "required": [
+        "availability",
+        "conformance",
+        "assertions"
+      ],
+      "type": "object"
+    },
+    "Availability": {
+      "description": "Evidence-backed availability of the requested capability.",
+      "oneOf": [
+        {
+          "const": "available",
+          "description": "A correlated protocol reply established implementation support.",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "description": "The barrier established that no protocol reply was produced.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "The exchange could not establish either state.",
+          "type": "string"
+        }
+      ]
+    },
+    "CandidateDisposition": {
+      "description": "Whether one observed candidate is safe to actuate under the v1 negotiation profile.",
+      "oneOf": [
+        {
+          "const": "eligible",
+          "description": "Availability, profile conformance, and transport readiness are all established.",
+          "type": "string"
+        },
+        {
+          "const": "ineligible",
+          "description": "At least one required claim is unavailable, negative, or unknown.",
+          "type": "string"
+        }
+      ]
+    },
+    "CapabilityId": {
+      "additionalProperties": false,
+      "description": "One capability with semantics defined by a protocol profile.",
+      "properties": {
+        "name": {
+          "description": "Stable capability name inside the protocol profile.",
+          "type": "string"
+        },
+        "protocol": {
+          "$ref": "#/$defs/ProtocolId",
+          "description": "Protocol family that owns the capability semantics."
+        }
+      },
+      "required": [
+        "protocol",
+        "name"
+      ],
+      "type": "object"
+    },
+    "Conformance": {
+      "description": "Conformance of the observed exchange to the active profile.",
+      "oneOf": [
+        {
+          "const": "conformant",
+          "description": "All applicable assertions passed.",
+          "type": "string"
+        },
+        {
+          "const": "nonconformant",
+          "description": "At least one applicable assertion failed.",
+          "type": "string"
+        },
+        {
+          "const": "not_applicable",
+          "description": "The implementation did not expose the capability, so profile conformance was not tested.",
+          "type": "string"
+        },
+        {
+          "const": "inconclusive",
+          "description": "Evidence was insufficient to evaluate the profile.",
+          "type": "string"
+        }
+      ]
+    },
+    "CorrelationId": {
+      "additionalProperties": false,
+      "description": "Protocol-scoped correlation identity for one request-response relation.",
+      "properties": {
+        "namespace": {
+          "description": "Stable namespace defining how the value is interpreted.",
+          "type": "string"
+        },
+        "value": {
+          "description": "Exact protocol value retained without imposing a numeric representation.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "namespace",
+        "value"
+      ],
+      "type": "object"
+    },
+    "EnvironmentHint": {
+      "additionalProperties": false,
+      "description": "A bounded environment observation that never establishes topology or support.",
+      "properties": {
+        "name": {
+          "description": "Environment variable name.",
+          "type": "string"
+        },
+        "observation": {
+          "$ref": "#/$defs/HintObservation",
+          "description": "Observed presence or allowlisted value."
+        }
+      },
+      "required": [
+        "name",
+        "observation"
+      ],
+      "type": "object"
+    },
+    "HintObservation": {
+      "description": "How an environment hint was retained without promoting it to capability evidence.",
+      "oneOf": [
+        {
+          "const": "present",
+          "description": "The variable was present; its value was intentionally not retained.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A bounded non-sensitive value was retained verbatim.",
+          "properties": {
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "NegotiationCandidateV1": {
+      "additionalProperties": false,
+      "description": "One capability receipt in caller-defined preference order.",
+      "properties": {
+        "disposition": {
+          "$ref": "#/$defs/CandidateDisposition",
+          "description": "Derived eligibility; the complete evidence remains in `receipt`."
+        },
+        "preference": {
+          "description": "Zero-based preference rank supplied by the negotiating consumer.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "receipt": {
+          "$ref": "#/$defs/ProbeReceiptV1",
+          "description": "Exact live receipt from the candidate adapter."
+        }
+      },
+      "required": [
+        "preference",
+        "disposition",
+        "receipt"
+      ],
+      "type": "object"
+    },
+    "NegotiationSelectionV1": {
+      "description": "Result of evaluating all supplied candidates without erasing negative or unknown evidence.",
+      "oneOf": [
+        {
+          "description": "The first eligible candidate in explicit preference order.",
+          "properties": {
+            "adapter": {
+              "$ref": "#/$defs/AdapterIdentity",
+              "description": "Adapter that produced the selected evidence."
+            },
+            "capability": {
+              "$ref": "#/$defs/CapabilityId",
+              "description": "Selected protocol capability."
+            },
+            "preference": {
+              "description": "Preference rank of the selected candidate.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "state": {
+              "const": "selected",
+              "type": "string"
+            }
+          },
+          "required": [
+            "state",
+            "preference",
+            "capability",
+            "adapter"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "No supplied candidate had sufficient positive evidence.",
+          "properties": {
+            "state": {
+              "const": "no_eligible_candidate",
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PathHop": {
+      "additionalProperties": false,
+      "description": "One explicitly declared transport or consumer hop.",
+      "properties": {
+        "implementation": {
+          "description": "Implementation name when known.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Generic role such as `multiplexer`, `transport`, or `terminal`.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Implementation version when known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "role",
+        "implementation"
+      ],
+      "type": "object"
+    },
+    "ProbeContext": {
+      "additionalProperties": false,
+      "description": "Context in which a live probe was executed.",
+      "properties": {
+        "environment_hints": {
+          "description": "Bounded observations useful for diagnosis but not capability claims.",
+          "items": {
+            "$ref": "#/$defs/EnvironmentHint"
+          },
+          "type": "array"
+        },
+        "topology": {
+          "$ref": "#/$defs/TopologyObservation",
+          "description": "Directly evidenced or explicitly unknown topology."
+        },
+        "transport": {
+          "$ref": "#/$defs/TransportEvidence",
+          "description": "Evidence about preparation of the active transport path."
+        },
+        "tty_endpoint": {
+          "description": "TTY endpoint used for both request and response.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tty_endpoint",
+        "transport",
+        "environment_hints",
+        "topology"
+      ],
+      "type": "object"
+    },
+    "ProbeReceiptV1": {
+      "additionalProperties": false,
+      "description": "Version-one portable receipt for a live terminal capability probe.",
+      "properties": {
+        "adapter": {
+          "$ref": "#/$defs/AdapterIdentity",
+          "description": "Adapter implementation that emitted and parsed the exchange."
+        },
+        "assessment": {
+          "$ref": "#/$defs/Assessment",
+          "description": "Interpretation derived from the exchange."
+        },
+        "capability": {
+          "$ref": "#/$defs/CapabilityId",
+          "description": "Capability whose semantics govern the assessment."
+        },
+        "context": {
+          "$ref": "#/$defs/ProbeContext",
+          "description": "Execution context with unknowns preserved."
+        },
+        "correlation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CorrelationId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Protocol-level correlation identity when this profile defines one."
+        },
+        "exchange": {
+          "$ref": "#/$defs/WireExchange",
+          "description": "Exact transport evidence."
+        },
+        "observed_at_unix_ms": {
+          "description": "Wall-clock observation time as milliseconds since the Unix epoch.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "schema": {
+          "description": "Stable schema identifier.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "observed_at_unix_ms",
+        "capability",
+        "adapter",
+        "context",
+        "exchange",
+        "assessment"
+      ],
+      "type": "object"
+    },
+    "ProtocolId": {
+      "additionalProperties": false,
+      "description": "A protocol or standards family independent of any implementation.",
+      "properties": {
+        "name": {
+          "description": "Human-readable protocol name inside the namespace.",
+          "type": "string"
+        },
+        "namespace": {
+          "description": "Reverse-domain or standards-owned namespace.",
+          "type": "string"
+        },
+        "revision": {
+          "description": "Profile or protocol revision used by this exchange.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "namespace",
+        "name",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "StopReason": {
+      "description": "Why the live exchange stopped collecting response bytes.",
+      "oneOf": [
+        {
+          "const": "capability_and_barrier_observed",
+          "description": "Both the capability reply and its ordering barrier were observed.",
+          "type": "string"
+        },
+        {
+          "const": "barrier_observed",
+          "description": "The ordering barrier arrived without a capability reply.",
+          "type": "string"
+        },
+        {
+          "const": "timeout",
+          "description": "The configured deadline elapsed.",
+          "type": "string"
+        },
+        {
+          "const": "resource_limit",
+          "description": "The bounded response buffer was exhausted.",
+          "type": "string"
+        },
+        {
+          "const": "end_of_input",
+          "description": "The TTY returned end-of-input.",
+          "type": "string"
+        }
+      ]
+    },
+    "TopologyObservation": {
+      "description": "Whether the real transport topology is known from direct evidence.",
+      "oneOf": [
+        {
+          "description": "No direct topology sensor was available.",
+          "properties": {
+            "state": {
+              "const": "unknown",
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The caller explicitly supplied an ordered path.",
+          "properties": {
+            "hops": {
+              "description": "Ordered hops from client to terminal consumer.",
+              "items": {
+                "$ref": "#/$defs/PathHop"
+              },
+              "type": "array"
+            },
+            "state": {
+              "const": "declared",
+              "type": "string"
+            }
+          },
+          "required": [
+            "state",
+            "hops"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TransportEvidence": {
+      "additionalProperties": false,
+      "description": "Transport identity and any preparation exchanges executed before the probe.",
+      "properties": {
+        "adapter": {
+          "$ref": "#/$defs/AdapterIdentity",
+          "description": "Adapter that transformed logical requests into wire requests."
+        },
+        "preparation_exchanges": {
+          "description": "Ordered transport-owned exchanges retained for independent inspection.",
+          "items": {
+            "$ref": "#/$defs/WireExchange"
+          },
+          "type": "array"
+        },
+        "readiness": {
+          "$ref": "#/$defs/TransportReadiness",
+          "description": "Evidence-backed readiness of this transport path."
+        }
+      },
+      "required": [
+        "adapter",
+        "readiness",
+        "preparation_exchanges"
+      ],
+      "type": "object"
+    },
+    "TransportReadiness": {
+      "description": "Whether a transport path was ready for an application protocol exchange.",
+      "oneOf": [
+        {
+          "const": "not_required",
+          "description": "This adapter requires no preparation exchange.",
+          "type": "string"
+        },
+        {
+          "const": "ready",
+          "description": "A transport-owned readiness exchange completed.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Preparation did not establish readiness before its deadline.",
+          "type": "string"
+        }
+      ]
+    },
+    "WireEvent": {
+      "additionalProperties": false,
+      "description": "One parsed event with its exact wire representation.",
+      "properties": {
+        "correlation": {
+          "description": "Correlation value recovered from the protocol response.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Structured protocol fields retained without changing the core schema.",
+          "type": "object"
+        },
+        "protocol": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProtocolId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Protocol family that parsed this event, if any."
+        },
+        "raw_base64": {
+          "description": "Exact event bytes encoded with standard Base64.",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/WireEventRole",
+          "description": "Adapter-independent event role."
+        },
+        "sequence": {
+          "description": "Zero-based event order in the received byte stream.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "description": "Protocol-defined status token such as `OK`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sequence",
+        "role",
+        "fields",
+        "raw_base64"
+      ],
+      "type": "object"
+    },
+    "WireEventRole": {
+      "description": "Semantic role of a parsed wire event.",
+      "oneOf": [
+        {
+          "const": "capability_reply",
+          "description": "Reply to the capability probe.",
+          "type": "string"
+        },
+        {
+          "const": "barrier_reply",
+          "description": "Reply to the ordering barrier sent after the probe.",
+          "type": "string"
+        },
+        {
+          "const": "unclassified",
+          "description": "Bytes retained as evidence but not classified by the active adapter.",
+          "type": "string"
+        }
+      ]
+    },
+    "WireExchange": {
+      "additionalProperties": false,
+      "description": "Exact bytes and parsed events from one request-response exchange.",
+      "properties": {
+        "elapsed_ms": {
+          "description": "Monotonic elapsed time rounded to milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "events": {
+          "description": "Parsed events in wire order.",
+          "items": {
+            "$ref": "#/$defs/WireEvent"
+          },
+          "type": "array"
+        },
+        "logical_request_base64": {
+          "description": "Logical request before any transport-specific transformation.",
+          "type": "string"
+        },
+        "response_base64": {
+          "description": "Exact bytes read before the exchange stopped, encoded with standard Base64.",
+          "type": "string"
+        },
+        "stop_reason": {
+          "$ref": "#/$defs/StopReason",
+          "description": "Terminal condition for response collection."
+        },
+        "wire_request_base64": {
+          "description": "Exact request written to the TTY after transport transformation.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "logical_request_base64",
+        "wire_request_base64",
+        "response_base64",
+        "events",
+        "elapsed_ms",
+        "stop_reason"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:terminal-interop:capability-negotiation:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Portable receipt for deterministic capability selection from ordered live evidence.",
+  "properties": {
+    "candidates": {
+      "description": "Candidates in exact caller-defined preference order.",
+      "items": {
+        "$ref": "#/$defs/NegotiationCandidateV1"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "urn:terminal-interop:capability-negotiation:v1",
+      "description": "Stable schema identifier."
+    },
+    "selection": {
+      "$ref": "#/$defs/NegotiationSelectionV1",
+      "description": "Selected candidate or an explicit evidence-backed absence."
+    }
+  },
+  "required": [
+    "schema",
+    "candidates",
+    "selection"
+  ],
+  "title": "CapabilityNegotiationV1",
+  "type": "object"
+}

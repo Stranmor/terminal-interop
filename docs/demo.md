@@ -8,7 +8,7 @@ machine-readable JSON summary.
 ## Cold start
 
 ```bash
-git clone REPOSITORY_URL terminal-interop
+git clone https://github.com/Stranmor/terminal-interop.git
 cd terminal-interop
 ./install.sh
 
@@ -16,17 +16,23 @@ reference=$(term-interop offer ./path/to/report.md)
 zv "$reference"
 ```
 
-`REPOSITORY_URL` intentionally remains a placeholder until a repository is actually published.
 The installer builds from `Cargo.lock`, installs an immutable content-addressed binary, and
 atomically activates `term-interop` and `zv` under the selected prefix.
+Custom packaging or smoke-test prefixes keep their desktop handler inside the same prefix and do
+not replace the live user's URI association unless activation is requested explicitly.
 
 ## Evidence commands
 
 ```bash
 cargo test --all-targets --locked
 ./tests/e2e-hidden-kitty.sh
+./tests/e2e-negotiation-kitty.sh
 ./tests/e2e-preview-kitty.sh
 ./tests/e2e-preview-text.sh
+./tests/e2e-contracts.sh
+./tests/e2e-contract-bundle.sh
+./tests/e2e-install-isolation.sh
+./tests/e2e-intent-callback.sh
 
 TERM_INTEROP_ALACRITTY_BIN=/path/to/sixel-terminal \
     ./tests/e2e-preview-sixel.sh
@@ -43,16 +49,17 @@ are not committed or included in the JSON compatibility record.
 
 ## Reference snapshot
 
-The following snapshot was measured on August 1, 2026. It demonstrates the strength and shape of
+The following snapshot was measured on August 7, 2026. It demonstrates the strength and shape of
 the evidence; it is not a promise about an untested implementation or future release.
 
 | Consumed chain | Consumer evidence |
 |---|---|
 | Kitty 0.48.1 / KGP | capability available and conformant; 4,014 framebuffer colors; normalized fixture RMSE 0.0259; caller restored |
+| Kitty 0.48.1 / ordered pixel negotiation | KGP selected at preference 0; Sixel preserved as unavailable with its own receipt |
 | tmux 3.7b direct / KGP | unavailable on the direct path, reported explicitly rather than guessed |
 | tmux 3.7b DCS passthrough / KGP | transport ready; capability available and conformant |
-| Alacritty graphics revision `3d658d2e` / Sixel | 776 colors; normalized fixture RMSE 0.0146; restored frame RMSE 0.3691 |
-| Zellij 0.44.3 -> Alacritty graphics revision `3d658d2e` / Sixel | 1,400 colors; normalized fixture RMSE 0.0985; restored frame RMSE 0.3692 |
+| Alacritty graphics revision `3d658d2e` / Sixel | 858 colors; normalized fixture RMSE 0.0138; perceptual RMSE 0.0051; caller restored |
+| Zellij 0.44.3 -> Alacritty graphics revision `3d658d2e` / Sixel | 1,233 colors; normalized fixture RMSE 0.1654; perceptual RMSE 0.1189; caller restored |
 | OpenSSH_10.4p1 PTY -> remote `term-interop 0.1.0` -> Sixel | 773 colors; fixture RMSE 0.0141; Enter delta 0; restored frame RMSE 0.3669; exactly one window |
 | OpenSSH_10.4p1 PTY -> remote text pager | Unicode visible; escape sequence rendered inert; Enter kept the preview open; `q` restored the caller |
 

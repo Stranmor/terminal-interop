@@ -1,0 +1,29 @@
+{
+  "$defs": {
+    "EndpointId": {
+      "pattern": "^[0-9a-f]{32}$",
+      "type": "string"
+    }
+  },
+  "$id": "urn:terminal-interop:intent-ready:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "endpoint": {
+      "$ref": "#/$defs/EndpointId"
+    },
+    "schema": {
+      "const": "urn:terminal-interop:intent-ready:v1"
+    },
+    "uri_prefix": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "endpoint",
+    "uri_prefix"
+  ],
+  "title": "IntentReadyV1",
+  "type": "object"
+}

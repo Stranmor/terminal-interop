@@ -1,0 +1,95 @@
+{
+  "$defs": {
+    "FileIdentity": {
+      "additionalProperties": false,
+      "description": "File identity captured when an agent offers an artifact.",
+      "properties": {
+        "content_sha256_base64": {
+          "description": "SHA-256 of exact file contents encoded with standard Base64.",
+          "type": "string"
+        },
+        "device": {
+          "description": "Platform device identity, when available.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "inode": {
+          "description": "Platform inode identity, when available.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "modified_unix_nanos": {
+          "description": "Last modification time in nanoseconds since the Unix epoch, when available.",
+          "format": "uint128",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "size": {
+          "description": "Encoded file length.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "size",
+        "content_sha256_base64"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:terminal-interop:artifact-ref:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Portable local registry entry. Paths are data, never shell source.",
+  "properties": {
+    "identity": {
+      "$ref": "#/$defs/FileIdentity",
+      "description": "File identity observed at registration."
+    },
+    "path_base64": {
+      "description": "Exact platform path bytes encoded with standard Base64.",
+      "type": "string"
+    },
+    "path_encoding": {
+      "description": "Encoding profile for `path_base64`.",
+      "type": "string"
+    },
+    "registered_at_unix_ms": {
+      "description": "Registration time in milliseconds since the Unix epoch.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schema": {
+      "const": "urn:terminal-interop:artifact-ref:v1",
+      "description": "Stable schema identifier."
+    },
+    "token": {
+      "description": "Short opaque reference token.",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{13}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "token",
+    "path_encoding",
+    "path_base64",
+    "identity",
+    "registered_at_unix_ms"
+  ],
+  "title": "ArtifactRefV1",
+  "type": "object"
+}

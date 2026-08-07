@@ -157,12 +157,25 @@ if [[ -z "$image_window" ]] || ! remote_file_exists "$remote_image_started"; the
     printf 'SSH image consumer did not become ready\n' >&2
     exit 1
 fi
-sleep 1.2
+
+image_frame_ready=false
+for _ in $(seq 1 100); do
+    env -u WAYLAND_DISPLAY DISPLAY=":$display_number" \
+        import -window "$image_window" "$run_dir/image-live.png"
+    image_probe_colors=$(identify -format '%k' "$run_dir/image-live.png")
+    if ((image_probe_colors >= 500)); then
+        image_frame_ready=true
+        break
+    fi
+    sleep 0.1
+done
+if [[ "$image_frame_ready" != true ]]; then
+    printf 'SSH image consumer did not produce a color framebuffer before its deadline\n' >&2
+    exit 1
+fi
 
 image_windows_before=$(env -u WAYLAND_DISPLAY DISPLAY=":$display_number" \
     xdotool search --name "$image_title" 2>/dev/null | wc -l)
-env -u WAYLAND_DISPLAY DISPLAY=":$display_number" \
-    import -window "$image_window" "$run_dir/image-live.png"
 env -u WAYLAND_DISPLAY DISPLAY=":$display_number" \
     xdotool windowfocus "$image_window" key --window "$image_window" Return
 sleep 0.4

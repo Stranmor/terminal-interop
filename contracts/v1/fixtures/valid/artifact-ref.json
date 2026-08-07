@@ -1,0 +1,14 @@
+{
+  "schema": "urn:terminal-interop:artifact-ref:v1",
+  "token": "0123456789ABC",
+  "path_encoding": "unix-bytes-v1",
+  "path_base64": "L3RtcC9leGFtcGxlLnR4dA==",
+  "identity": {
+    "size": 0,
+    "modified_unix_nanos": null,
+    "device": null,
+    "inode": null,
+    "content_sha256_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "registered_at_unix_ms": 0
+}

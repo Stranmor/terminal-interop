@@ -3,6 +3,31 @@
 Terminal Interop exposes processes and data contracts rather than requiring an application to link
 all Rust crates.
 
+## Capability negotiation
+
+Before committing to a pixel renderer, obtain an ordered negotiation receipt:
+
+```bash
+term-interop negotiate pixel --pretty --output ./capability.json
+```
+
+The reference profile probes KGP and then Sixel. Embedding applications may compose the protocol
+crates directly, supply a different order, or add another adapter. They should apply
+`receipt_is_eligible`/`negotiate_capabilities_v1` or preserve the same semantics in another
+language: availability, conformance, and transport readiness must all be positive.
+
+For process-only integrations, validate any stored or externally received document before using
+it as actuation input:
+
+```bash
+term-interop validate --quiet ./capability.json
+```
+
+The checked-in [`contracts/v1`](../contracts/README.md) bundle lets another language vendor the
+schemas and run the same positive and adversarial vectors without compiling the Rust workspace.
+The dependency-free [`examples/consume-negotiation.py`](../examples/consume-negotiation.py)
+demonstrates the semantic selection rule independently of the reference implementation.
+
 ## Agent or producer
 
 After completing a file, register only the artifacts intentionally exposed to the user:
