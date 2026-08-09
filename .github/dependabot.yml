@@ -5,9 +5,27 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      cargo-minor-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Breaking upgrades are intentional migrations, not unattended bumps.
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+      # Cargo treats pre-1.0 minor releases as minor even when APIs may break.
+      - dependency-name: base64
+        update-types:
+          - version-update:semver-minor
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
