@@ -29,7 +29,7 @@ test checks fidelity, explicit close, and same-pane restoration. [Machine-readab
 The current implementation is Linux-first and requires Rust 1.90 or newer.
 
 ```bash
-git clone https://github.com/Stranmor/terminal-interop.git
+git clone --branch v0.1.0 --depth 1 https://github.com/Stranmor/terminal-interop.git
 cd terminal-interop
 ./install.sh
 
@@ -224,10 +224,10 @@ Read [SECURITY.md](SECURITY.md) before embedding the callback or rendering untru
 
 ## Status
 
-The repository is pre-1.0. Version-one contracts are explicit and additive evolution is preferred,
-but no broad ecosystem compatibility promise is implied until a tagged release exists. The Linux
-reference CLI is the best-tested composition; protocol-neutral crates are deliberately kept
-separate from desktop, multiplexer, and product-specific policy.
+The repository is pre-1.0. `v0.1.0` is the first tagged release. Version-one contracts are
+explicit and additive evolution is preferred, but no broad ecosystem compatibility promise is
+implied yet. The Linux reference CLI is the best-tested composition; protocol-neutral crates are
+deliberately kept separate from desktop, multiplexer, and product-specific policy.
 
 Contributions are most useful when they add a new adapter or exact-chain receipt without weakening
 unknown-state semantics. Start with [CONTRIBUTING.md](CONTRIBUTING.md).

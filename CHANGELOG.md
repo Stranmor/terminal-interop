@@ -7,6 +7,8 @@ and the project intends to use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-09
+
 ### Added
 
 - Capability negotiation v1: ordered live receipts, explicit eligibility, deterministic selection,
@@ -54,3 +56,6 @@ and the project intends to use [Semantic Versioning](https://semver.org/).
   SHA-256, so photographic quality can be verified without replacing the canonical test image.
 - Custom `PREFIX` installs keep desktop metadata inside that prefix and no longer replace the live
   user's URI-handler registration during packaging or release-smoke tests.
+
+[Unreleased]: https://github.com/Stranmor/terminal-interop/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Stranmor/terminal-interop/releases/tag/v0.1.0
