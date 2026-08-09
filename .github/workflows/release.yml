@@ -45,7 +45,10 @@ jobs:
           install -m755 scripts/zv "dist/${archive_root}/bin/zv"
           install -m644 README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "dist/${archive_root}/"
           tar -C dist -czf "dist/${archive_root}.tar.gz" "$archive_root"
-          sha256sum "dist/${archive_root}.tar.gz" >"dist/${archive_root}.tar.gz.sha256"
+          (
+            cd dist
+            sha256sum "${archive_root}.tar.gz" >"${archive_root}.tar.gz.sha256"
+          )
           rm -rf -- "dist/${archive_root}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
